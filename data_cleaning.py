@@ -224,7 +224,201 @@ def clean_dataset(input_file, output_file=None):
     
     return df_clean
 
+def analyze_dataset_structure(df):
+    """Analyze the structure and characteristics of the dataset to determine ML model suitability.
+    
+    This function examines:
+    1. Data balance/imbalance
+    2. Temporal characteristics
+    3. Feature distributions
+    4. Missing patterns
+    5. Suitable and unsuitable ML models
+    
+    Args:
+        df (pd.DataFrame): Input dataframe with columns ['id', 'time', 'variable', 'value']
+    
+    Returns:
+        dict: Analysis results and recommendations
+    """
+    logger.info("Analyzing dataset structure and ML model suitability...")
+    analysis = {}
+    
+    # 1. Basic dataset statistics
+    n_users = df['id'].nunique()
+    n_variables = df['variable'].nunique()
+    time_span = df['time'].max() - df['time'].min()
+    analysis['basic_stats'] = {
+        'n_users': n_users,
+        'n_variables': n_variables,
+        'time_span_days': time_span.days,
+        'total_records': len(df)
+    }
+    
+    # 2. Check data balance
+    user_counts = df.groupby('id').size()
+    variable_counts = df.groupby(['id', 'variable']).size().unstack(fill_value=0)
+    
+    analysis['balance'] = {
+        'records_per_user': {
+            'min': user_counts.min(),
+            'max': user_counts.max(),
+            'mean': user_counts.mean(),
+            'std': user_counts.std()
+        },
+        'coefficient_of_variation': user_counts.std() / user_counts.mean(),
+        'is_balanced': (user_counts.std() / user_counts.mean()) < 0.5
+    }
+    
+    # 3. Temporal characteristics
+    time_diffs = df.groupby(['id', 'variable'])['time'].diff()
+    sampling_stats = {
+        'median_sampling_interval': time_diffs.median(),
+        'sampling_regularity': time_diffs.std() / time_diffs.mean(),
+        'has_regular_sampling': (time_diffs.std() / time_diffs.mean() < 0.5)
+    }
+    analysis['temporal'] = sampling_stats
+    
+    # 4. Feature analysis
+    feature_stats = {}
+    for var in df['variable'].unique():
+        var_data = df[df['variable'] == var]['value']
+        feature_stats[var] = {
+            'mean': var_data.mean(),
+            'std': var_data.std(),
+            'missing_pct': (var_data.isnull().sum() / len(var_data)) * 100,
+            'unique_values': var_data.nunique()
+        }
+    analysis['features'] = feature_stats
+    
+    # 5. ML model recommendations
+    suitable_models = []
+    unsuitable_models = []
+    
+    # Time series models
+    if sampling_stats['has_regular_sampling']:
+        suitable_models.extend([
+            'ARIMA/SARIMA',
+            'Prophet',
+            'LSTM/RNN',
+            'Temporal Convolutional Networks'
+        ])
+    else:
+        unsuitable_models.extend([
+            'ARIMA/SARIMA',
+            'Basic RNNs'
+        ])
+        suitable_models.extend([
+            'Irregular time series models (e.g., Neural ODEs)',
+            'GRU/LSTM with time delta features'
+        ])
+    
+    # Traditional ML models
+    if analysis['balance']['is_balanced']:
+        suitable_models.extend([
+            'Random Forest',
+            'Gradient Boosting (XGBoost, LightGBM)',
+            'Linear/Logistic Regression',
+            'SVM'
+        ])
+    else:
+        suitable_models.extend([
+            'Weighted Random Forest',
+            'Balanced Gradient Boosting',
+            'SMOTE + Traditional Models'
+        ])
+        unsuitable_models.extend([
+            'Basic Linear/Logistic Regression',
+            'Unweighted classifiers'
+        ])
+    
+    # Deep Learning models
+    if len(df) > 10000:  # Sufficient data for deep learning
+        suitable_models.extend([
+            'Deep Neural Networks',
+            'Transformers with temporal encoding',
+            'Multi-task Learning Models'
+        ])
+    else:
+        unsuitable_models.append('Deep Neural Networks (insufficient data)')
+    
+    analysis['ml_recommendations'] = {
+        'suitable_models': suitable_models,
+        'unsuitable_models': unsuitable_models,
+        'notes': []
+    }
+    
+    # Add important notes based on analysis
+    if not analysis['balance']['is_balanced']:
+        analysis['ml_recommendations']['notes'].append(
+            'Data is imbalanced - consider using class weights or SMOTE'
+        )
+    
+    if time_span.days < 30:
+        analysis['ml_recommendations']['notes'].append(
+            'Short time span - may not capture long-term patterns'
+        )
+    
+    if any(stats['missing_pct'] > 20 for stats in feature_stats.values()):
+        analysis['ml_recommendations']['notes'].append(
+            'High missing data percentage - consider advanced imputation techniques'
+        )
+    
+    logger.info("Dataset structure analysis complete")
+    return analysis
+
+def print_analysis_report(analysis):
+    """Print a formatted report of the dataset analysis.
+    
+    Args:
+        analysis (dict): Analysis results from analyze_dataset_structure
+    """
+    print("\n=== Dataset Structure Analysis Report ===")
+    
+    print("\nBasic Statistics:")
+    print(f"- Number of users: {analysis['basic_stats']['n_users']}")
+    print(f"- Number of variables: {analysis['basic_stats']['n_variables']}")
+    print(f"- Time span: {analysis['basic_stats']['time_span_days']} days")
+    print(f"- Total records: {analysis['basic_stats']['total_records']:,}")
+    
+    print("\nData Balance:")
+    balance = analysis['balance']['records_per_user']
+    print(f"- Records per user: {balance['mean']:.1f} ± {balance['std']:.1f}")
+    print(f"- Min records: {balance['min']}, Max records: {balance['max']}")
+    print(f"- Data is {'balanced' if analysis['balance']['is_balanced'] else 'imbalanced'}")
+    
+    print("\nTemporal Characteristics:")
+    print(f"- Median sampling interval: {analysis['temporal']['median_sampling_interval']}")
+    print(f"- Sampling is {'regular' if analysis['temporal']['has_regular_sampling'] else 'irregular'}")
+    
+    print("\nFeature Statistics:")
+    for var, stats in analysis['features'].items():
+        print(f"\n{var}:")
+        print(f"  - Mean: {stats['mean']:.2f} ± {stats['std']:.2f}")
+        print(f"  - Missing: {stats['missing_pct']:.1f}%")
+        print(f"  - Unique values: {stats['unique_values']}")
+    
+    print("\nRecommended ML Models:")
+    for model in analysis['ml_recommendations']['suitable_models']:
+        print(f"✓ {model}")
+    
+    print("\nNot Recommended ML Models:")
+    for model in analysis['ml_recommendations']['unsuitable_models']:
+        print(f"✗ {model}")
+    
+    if analysis['ml_recommendations']['notes']:
+        print("\nImportant Notes:")
+        for note in analysis['ml_recommendations']['notes']:
+            print(f"! {note}")
+
 if __name__ == "__main__":
     # Example usage
     input_file = "data/dataset_mood_smartphone.csv"
-    clean_dataset(input_file)
+    df = pd.read_csv(input_file)
+    df['time'] = pd.to_datetime(df['time'])
+    
+    # Clean the dataset
+    df_clean = clean_dataset(input_file)
+    
+    # Analyze the cleaned dataset
+    analysis = analyze_dataset_structure(df_clean)
+    print_analysis_report(analysis)
