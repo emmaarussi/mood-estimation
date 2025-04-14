@@ -1,0 +1,59 @@
+\section{Data Cleaning Methodology}
+To ensure the reliability of our analysis, we implemented a comprehensive data cleaning approach consisting of two main components: outlier removal and missing value imputation.
+
+\subsection{Outlier Detection and Removal}
+Our outlier detection strategy employed three complementary approaches:
+
+\paragraph{Statistical Outlier Detection}
+We utilized the Interquartile Range (IQR) method with variable-specific thresholds:
+\begin{itemize}
+    \item Standard threshold ($3 \times IQR$) for psychological measures (mood, arousal, valence)
+    \item More permissive threshold ($5 \times IQR$) for app usage times to accommodate natural variability
+\end{itemize}
+
+\paragraph{Domain-based Validation}
+We enforced known valid ranges for each variable type:
+\begin{itemize}
+    \item Mood: [1, 10] scale
+    \item Arousal/Valence: [-2, 2] scale
+    \item Activity: [0, 1] scale
+    \item Screen time: [0, 7200] seconds (maximum 2 hours per event)
+    \item Call/SMS: Binary values \{0, 1\}
+\end{itemize}
+
+\paragraph{Physiological Validation}
+We identified and removed physiologically improbable changes in psychological measures:
+\begin{itemize}
+    \item Mood: Maximum change of 9 points per 5-minute interval
+    \item Arousal/Valence: Maximum change of 4 points per 5-minute interval
+\end{itemize}
+
+This multi-faceted approach resulted in the removal of 13,735 outliers (approximately 5\% of the dataset), significantly improving data quality while preserving the underlying patterns.
+
+\subsection{Missing Value Imputation}
+We developed a time-aware, user-specific imputation strategy that accounts for the temporal nature of the data:
+
+\paragraph{Short Gaps (< 6 hours)}
+For brief periods of missing data:
+\begin{itemize}
+    \item Applied linear interpolation to maintain local trends
+    \item Preserved the natural progression of psychological states
+    \item Handled each user's data separately to maintain individual differences
+\end{itemize}
+
+\paragraph{Long Gaps (≥ 6 hours)}
+For extended periods of missing data:
+\begin{itemize}
+    \item Utilized time-of-day means from the user's historical data
+    \item Fell back to overall user means when historical data was unavailable
+    \item Accounted for daily patterns in psychological states
+\end{itemize}
+
+\paragraph{Special Cases}
+For specific variable types:
+\begin{itemize}
+    \item App usage and screen time: Imputed with 0 (assuming no usage)
+    \item Binary variables (calls, SMS): Imputed with 0 (assuming no event)
+\end{itemize}
+
+This imputation strategy successfully handled most missing values, with only a single missing value remaining in the circumplex.valence variable. The approach preserves both temporal patterns and individual differences while maintaining the integrity of the psychological measurements.

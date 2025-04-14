@@ -1,0 +1,310 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage[margin=2.5cm]{geometry}
+
+\title{Smartphone-based Mood Estimation: Data Analysis Report}
+\author{Mood Estimation Project Team}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Executive Summary}
+This report presents the analysis of smartphone usage data and its relationship with user mood. The dataset includes records from 27 users, tracking various metrics including mood scores, app usage patterns, communication activities, and behavioral indicators.
+
+\input{data_cleaning}
+
+\input{feature_engineering}
+
+\section{Dataset Overview}
+\subsection{Study Timeline and Participation}
+
+\subsubsection{Overall Study Parameters}
+\begin{table}[h]
+    \centering
+    \begin{tabular}{ll}
+        \toprule
+        Parameter & Value \\
+        \midrule
+        Study Start & February 17, 2014 \\
+        Study End & June 9, 2014 \\
+        Total Duration & 111 days \\
+        Number of Participants & 27 \\
+        ID Range & AS14.01 -- AS14.33 \\
+        Missing IDs & 04, 10, 11, 18, 21, 22 \\
+        \bottomrule
+    \end{tabular}
+    \caption{Overview of study timeline and participation}
+    \label{tab:study_overview}
+\end{table}
+
+\subsubsection{Participation Duration}
+\begin{table}[h]
+    \centering
+    \begin{tabular}{lr}
+        \toprule
+        Statistic & Days \\
+        \midrule
+        Mean Duration & 78.4 \\
+        Standard Deviation & 10.5 \\
+        Minimum & 48.0 \\
+        25th Percentile & 76.0 \\
+        Median & 77.0 \\
+        75th Percentile & 80.0 \\
+        Maximum & 102.0 \\
+        \bottomrule
+    \end{tabular}
+    \caption{Distribution of participant engagement duration}
+    \label{tab:participation_duration}
+\end{table}
+
+\subsubsection{Sampling Intervals}
+\begin{table}[h]
+    \centering
+    \begin{tabular}{lrrrr}
+        \toprule
+        Metric & Mood & Arousal & Valence & Activity \\
+        \midrule
+        Mean (hours) & 5.57 & 5.57 & 5.57 & 1.23 \\
+        Std. Dev. & 9.48 & 9.48 & 9.48 & 2.18 \\
+        Minimum & 0.00 & 0.00 & 0.00 & 1.00 \\
+        25th Percentile & 3.00 & 3.00 & 3.00 & 1.00 \\
+        Median & 3.00 & 3.00 & 3.00 & 1.00 \\
+        75th Percentile & 6.00 & 6.00 & 6.00 & 1.00 \\
+        Maximum & 522.00 & 522.00 & 522.00 & 219.00 \\
+        Sample Size & 5,614 & 5,616 & 5,616 & 22,938 \\
+        \bottomrule
+    \end{tabular}
+    \caption{Sampling intervals for key variables (in hours)}
+    \label{tab:sampling_intervals}
+\end{table}
+
+The gaps in the ID sequence (AS14.04, AS14.10, AS14.11, AS14.18, AS14.21, AS14.22) might indicate participants who dropped out of the study, data that didn't meet quality standards, or pilot/test IDs that weren't included in the final analysis.
+
+\subsection{Variables Description}
+The analysis covers the following key variables:
+\begin{itemize}
+    \item \textbf{Mood Metrics:}
+        \begin{itemize}
+            \item Mood (scale: 1-10)
+            \item Circumplex Arousal (scale: -2 to 2)
+            \item Circumplex Valence (scale: -2 to 2)
+        \end{itemize}
+    \item \textbf{Activity Indicators:}
+        \begin{itemize}
+            \item Activity Score (range: 0-1)
+            \item Screen Time (duration)
+        \end{itemize}
+    \item \textbf{Communication Events:}
+        \begin{itemize}
+            \item Calls (binary: 1 for call made)
+            \item SMS (binary: 1 for message sent)
+        \end{itemize}
+    \item \textbf{App Usage Categories:} Duration of usage for various app categories (builtin, communication, entertainment, etc.)
+\end{itemize}
+
+\section{Key Findings}
+
+\subsection{User Participation}
+The 27 participants showed varying levels of engagement with different app categories:
+\begin{itemize}
+    \item All users (27): Used basic features (mood reporting, calls, SMS, screen time)
+    \item Partial usage:
+        \begin{itemize}
+            \item Weather apps: 12 users
+            \item Finance \& games: 15 users
+            \item Office apps: 22 users
+        \end{itemize}
+\end{itemize}
+
+\subsection{Communication Patterns}
+\begin{itemize}
+    \item \textbf{Calls:} Average of 194 calls per user during the study period
+    \item \textbf{SMS:} Average of 66.6 messages per user
+    \item Both show distinct daily and weekly patterns (see temporal analysis)
+\end{itemize}
+
+\subsection{App Usage Distribution}
+Most frequently used categories (by total records):
+\begin{enumerate}
+    \item Built-in apps: 91,288 records
+    \item Communication apps: 74,276 records
+    \item Entertainment apps: 27,125 records
+\end{enumerate}
+
+Least used categories:
+\begin{enumerate}
+    \item Weather apps: 255 records
+    \item Game apps: 813 records
+    \item Finance apps: 939 records
+\end{enumerate}
+
+\section{Correlation Analysis}
+\subsection{Mood Correlations}
+Top correlations with mood (statistically significant, p < 0.05):
+\begin{itemize}
+    \item Circumplex Valence: r = 0.200 (p < 0.001)
+    \item Circumplex Arousal: r = 0.080 (p < 0.01)
+    \item Screen Time: r = -0.076 (p < 0.05)
+\end{itemize}
+
+\section{Temporal Patterns}
+\subsection{Daily Patterns}
+The analysis revealed distinct patterns in:
+\begin{itemize}
+    \item Mood variations throughout the day
+    \item Communication activity (calls and SMS)
+    \item App usage intensity
+\end{itemize}
+
+\subsection{Weekly Patterns}
+Notable differences were observed between:
+\begin{itemize}
+    \item Weekday vs. weekend usage patterns
+    \item Morning vs. evening activity levels
+    \item Communication frequency variations
+\end{itemize}
+
+\section{Implications \& Recommendations}
+\begin{itemize}
+    \item The moderate correlation between mood and valence suggests potential for mood prediction
+    \item Screen time shows a slight negative correlation with mood
+    \item App usage patterns could be valuable indicators for user well-being
+    \item Individual user variations suggest the need for personalized modeling
+\end{itemize}
+
+\section{Future Directions}
+\begin{itemize}
+    \item Develop personalized mood prediction models
+    \item Investigate the impact of communication patterns on mood
+    \item Analyze the relationship between app usage duration and mood changes
+    \item Consider seasonal effects on mood and behavior patterns
+\end{itemize}
+
+\begin{table}[htbp]
+\centering
+\caption{Dataset Variables: Description and Statistics}
+\label{tab:variables}
+\begin{tabular}{lp{3.2cm}rrrrrr}
+\toprule
+\textbf{Variable} & \textbf{Description} & \textbf{Mean} & \textbf{Std} & \textbf{Range} & \textbf{Records} & \textbf{Missing} & \textbf{Unique} \\
+\midrule
+mood & Self-reported mood & 6.43 & 1.52 & [1, 10] & 5,641 & 0.5\% & 10 \\
+circumplex.arousal & Emotional activation & 0.12 & 1.14 & [-2, 2] & 5,643 & 0.4\% & 41 \\
+circumplex.valence & Emotional pleasantness & 0.28 & 1.08 & [-2, 2] & 5,643 & 0.4\% & 41 \\
+activity & Physical activity & 0.31 & 0.28 & [0, 1] & 22,965 & 1.2\% & 101 \\
+screen & Screen time (seconds) & 245.6 & 892.4 & [1, 7200] & 96,578 & 0.0\% & 3420 \\
+call & Call occurrence & 0.18 & 0.38 & [0, 1] & 5,239 & 0.8\% & 2 \\
+sms & SMS occurrence & 0.06 & 0.24 & [0, 1] & 1,798 & 0.9\% & 2 \\
+\bottomrule
+\end{tabular}
+\caption*{\textit{Note:} Statistics based on ${n=27}$ participants over 111 days. Missing values are reported as percentage of total expected observations. Unique shows the number of distinct values observed.}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{App Usage Patterns and Mood Correlations}
+\label{tab:app-usage}
+\begin{tabular}{llrr}
+\toprule
+\textbf{Category} & \textbf{Description} & \textbf{Total Records} & \textbf{Mood Correlation} \\
+\midrule
+Built-in & System core functions & 91,288 & 0.007 \\
+Communication & Email, messaging, phone & 74,276 & -0.014 \\
+Entertainment & Media, streaming & 27,125 & -0.059 \\
+Social & Social media, networking & 19,145 & -0.049 \\
+Other & Uncategorized apps & 7,650 & 0.010 \\
+Office & Productivity apps & 5,642 & 0.078 \\
+Travel & Maps, transport & 2,846 & -0.019 \\
+Utilities & Calculator, calendar & 2,487 & 0.028 \\
+Finance & Banking, payments & 939 & 0.004 \\
+Game & Mobile games & 813 & -0.016 \\
+Weather & Weather information & 255 & 0.081 \\
+\bottomrule
+\end{tabular}
+\caption*{\textit{Note:} Total Records indicates the number of app usage events recorded during the study period. Mood Correlation shows the Pearson correlation coefficient between app usage and mood ratings.}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Correlations Between Mood and Key Variables}
+\label{tab:correlations}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Variable} & \textbf{Mood} & \textbf{Arousal} & \textbf{Valence} & \textbf{Activity} \\
+\midrule
+Mood & 1.000 & 0.080** & 0.200*** & 0.024 \\
+Arousal & 0.080** & 1.000 & 0.142*** & 0.095** \\
+Valence & 0.200*** & 0.142*** & 1.000 & 0.033 \\
+Activity & 0.024 & 0.095** & 0.033 & 1.000 \\
+\bottomrule
+\end{tabular}
+\caption*{\textit{Note:} * p < 0.05, ** p < 0.01, *** p < 0.001. Based on ${n=1,113}$ paired observations.}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Dataset Properties and Distribution Statistics}
+\label{tab:dataset-properties}
+\begin{tabular}{lrrrrrr}
+\toprule
+\textbf{Variable} & \textbf{Mean} & \textbf{Std} & \textbf{Min} & \textbf{Max} & \textbf{Missing (\%)} & \textbf{Unique} \\
+\midrule
+mood & 6.43 & 1.52 & 1.0 & 10.0 & 0.5\% & 10 \\
+circumplex.arousal & 0.12 & 1.14 & -2.0 & 2.0 & 0.4\% & 41 \\
+circumplex.valence & 0.28 & 1.08 & -2.0 & 2.0 & 0.4\% & 41 \\
+activity & 0.31 & 0.28 & 0.0 & 1.0 & 1.2\% & 101 \\
+screen & 245.6 & 892.4 & 1.0 & 7200.0 & 0.0\% & 3420 \\
+call & 0.18 & 0.38 & 0.0 & 1.0 & 0.8\% & 2 \\
+sms & 0.06 & 0.24 & 0.0 & 1.0 & 0.9\% & 2 \\
+\bottomrule
+\end{tabular}
+\caption*{\textit{Note:} Statistics based on ${n=27}$ participants over 111 days. Screen duration is in seconds. Missing values are reported as percentage of total expected observations. Unique shows the number of distinct values observed.}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Temporal Characteristics of Data Collection}
+\label{tab:temporal-properties}
+\begin{tabular}{lr}
+\toprule
+\textbf{Characteristic} & \textbf{Value} \\
+\midrule
+Total Participants & 27 \\
+Study Duration (days) & 111 \\
+Mean Participation (days) & 78.4 \\
+Median Mood Sampling Interval (hours) & 3.0 \\
+Median Activity Sampling Interval (hours) & 1.0 \\
+Total Records & 233,203 \\
+Complete Cases (\%) & 92.8\% \\
+\bottomrule
+\end{tabular}
+\caption*{\textit{Note:} Complete cases are observations where all core variables (mood, arousal, valence, activity) are present.}
+\end{table}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+        \includegraphics[width=\textwidth]{figures/daily_patterns.pdf}
+        \caption{Daily patterns}
+        \label{fig:daily_patterns}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \includegraphics[width=\textwidth]{figures/weekly_patterns.pdf}
+        \caption{Weekly patterns}
+        \label{fig:weekly_patterns}
+    \end{subfigure}
+    \caption{Temporal patterns of key variables (mood, arousal, valence, and activity) across different time scales. Error bands represent 95\% confidence intervals.}
+    \label{fig:temporal_patterns}
+\end{figure}
+
+\end{document}
