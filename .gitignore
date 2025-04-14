@@ -19,6 +19,14 @@ htmlcov/
 coverage.xml
 *.cover
 
+# Generated files
+data_analysis/plots/
+data/*.csv
+models/
+*.model
+*.png
+*.csv
+
 # IDEs
 .idea/
 .vscode/
