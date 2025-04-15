@@ -125,6 +125,12 @@ def main():
     df = pd.read_csv('data/mood_prediction_simple_features.csv')
     df['time'] = pd.to_datetime(df['time'])
     
+    # Print initial stats
+    print(f"\nInitial shape: {df.shape}")
+    print("\nMood recording statistics:")
+    print(df['mood'].describe())
+    print(f"\nNaN in mood: {df['mood'].isna().sum()}")
+    
     # Prepare train/val/test splits
     train_end = pd.to_datetime('2014-05-08')
     val_end = pd.to_datetime('2014-05-23')
@@ -139,12 +145,7 @@ def main():
     val_mask = (dates > train_end) & (dates <= val_end)
     test_mask = dates > val_end
     
-    # Remove any NaN targets
-    valid_targets = ~np.isnan(y)
-    X = X[valid_targets]
-    y = y[valid_targets]
-    dates = np.array(dates)[valid_targets]
-    user_ids = np.array(user_ids)[valid_targets]
+
     
     # Recompute masks after filtering
     train_mask = dates <= train_end

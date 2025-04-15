@@ -5,17 +5,6 @@ from sklearn.metrics import r2_score, mean_squared_error
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime, timedelta
-import sys
-sys.path.append('..')
-from feature_engineering.feature_engineering import (
-    create_temporal_features,
-    create_lag_features,
-    create_activity_features,
-    create_communication_features,
-    create_app_usage_features,
-    create_circumplex_features,
-    pivot_long_to_wide
-)
 
 def smape(y_true, y_pred):
     """Symmetric Mean Absolute Percentage Error"""
@@ -25,73 +14,7 @@ def wmape(y_true, y_pred):
     """Weighted Mean Absolute Percentage Error"""
     return np.sum(np.abs(y_true - y_pred)) / np.sum(np.abs(y_true)) * 100
 
-def prepare_features(df, target_col='mood', window_sizes=[24, 48, 72, 168]):
-    """Prepare all features for modeling"""
-    print("Creating features...")
-    
-    # Convert to wide format if needed
-    if 'variable' in df.columns:
-        df = pivot_long_to_wide(df)
-    
-    # Sort by time first
-    df = df.sort_values(['id', 'time'])
-    
-    # Create basic temporal features (no data leakage)
-    features = create_temporal_features(df)
-    
-    # Create lagged features manually to prevent leakage
-    for lag in [8, 16, 24, 48, 72, 168]:
-        # Simple lag
-        features[f'mood_lag_{lag}h'] = features.groupby('id')[target_col].shift(lag)
-        
-        # Rolling stats on past data only
-        features[f'mood_rolling_mean_{lag}h'] = features.groupby('id')[target_col].transform(
-            lambda x: x.shift(1).rolling(window=lag, min_periods=1).mean()
-        )
-        features[f'mood_rolling_std_{lag}h'] = features.groupby('id')[target_col].transform(
-            lambda x: x.shift(1).rolling(window=lag, min_periods=1).std()
-        )
-        features[f'mood_rolling_min_{lag}h'] = features.groupby('id')[target_col].transform(
-            lambda x: x.shift(1).rolling(window=lag, min_periods=1).min()
-        )
-        features[f'mood_rolling_max_{lag}h'] = features.groupby('id')[target_col].transform(
-            lambda x: x.shift(1).rolling(window=lag, min_periods=1).max()
-        )
-    
-    # Activity features with proper lag
-    for col in ['activity', 'screen']:
-        if col in features.columns:
-            for window in window_sizes:
-                features[f'{col}_past_{window}h'] = features.groupby('id')[col].transform(
-                    lambda x: x.shift(1).rolling(window=window, min_periods=1).mean()
-                )
-    
-    # Communication features with proper lag
-    for col in ['call', 'sms']:
-        if col in features.columns:
-            for window in window_sizes:
-                features[f'{col}_past_{window}h'] = features.groupby('id')[col].transform(
-                    lambda x: x.shift(1).rolling(window=window, min_periods=1).sum()
-                )
-    
-    # Emotion features with proper lag
-    for col in ['circumplex_arousal', 'circumplex_valence']:
-        if col in features.columns:
-            for window in window_sizes:
-                features[f'{col}_past_{window}h'] = features.groupby('id')[col].transform(
-                    lambda x: x.shift(1).rolling(window=window, min_periods=1).mean()
-                )
-    
-    # User-specific features using only past data
-    features['user_avg_mood'] = features.groupby('id')[target_col].transform(
-        lambda x: x.expanding().mean().shift(1)
-    )
-    features['mood_vs_average'] = features[target_col] - features['user_avg_mood']
-    
-    # Drop rows with missing target
-    features = features.dropna(subset=[target_col])
-    
-    return features
+
 
 def evaluate_predictions(y_true, y_pred, title="Model Performance"):
     """Calculate and display multiple performance metrics"""
@@ -136,11 +59,22 @@ def plot_results(y_true, y_pred, dates, title="Predictions vs Actual"):
 def main():
     # Load data
     print("Loading data...")
-    df = pd.read_csv('data/dataset_mood_smartphone_cleaned.csv')
-    df['time'] = pd.to_datetime(df['time'], format='mixed')
+    features = pd.read_csv('data/mood_prediction_features.csv')
+    features['time'] = pd.to_datetime(features['time'], format='mixed')
     
-    # Prepare features
-    features = prepare_features(df)
+    # Filter for rows where we have mood recordings
+    print("\nInitial shape:", features.shape)
+    features = features.dropna(subset=['mood'])
+    print("Shape after filtering for mood recordings:", features.shape)
+    
+    # Check data
+    print("\nMood recording statistics:")
+    print(features['mood'].describe())
+    
+    # Check feature NaN percentages
+    print("\nFeature NaN percentages:")
+    nan_percentages = features.isna().mean() * 100
+    print(nan_percentages.sort_values(ascending=False).head())
     
     # Prepare train/val/test splits
     train_end = pd.to_datetime('2014-05-08')
