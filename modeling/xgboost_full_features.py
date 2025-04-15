@@ -6,7 +6,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime, timedelta
 import sys
-sys.path.append('..')
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from feature_engineering.feature_engineering import (
     create_temporal_features,
     create_lag_features,
@@ -130,13 +133,13 @@ def plot_results(y_true, y_pred, dates, title="Predictions vs Actual"):
     plt.legend()
     
     plt.tight_layout()
-    plt.savefig(f'../data_analysis/plots/modeling/{title.lower().replace(" ", "_")}.png')
+    plt.savefig(f'data_analysis/plots/modeling/{title.lower().replace(" ", "_")}.png')
     plt.close()
 
 def main():
     # Load data
     print("Loading data...")
-    df = pd.read_csv('../data/dataset_mood_smartphone_cleaned.csv')
+    df = pd.read_csv('data/dataset_mood_smartphone_cleaned.csv')
     df['time'] = pd.to_datetime(df['time'], format='mixed')
     
     # Prepare features
@@ -227,14 +230,14 @@ def main():
     sns.barplot(data=feature_importance.head(20), x='importance', y='feature')
     plt.title("Top 20 Feature Importance")
     plt.tight_layout()
-    plt.savefig('../data_analysis/plots/modeling/feature_importance_full.png')
+    plt.savefig('data_analysis/plots/modeling/feature_importance_full.png')
     plt.close()
     
     print("\nTop 20 Features:")
     print(feature_importance.head(20))
     
     # Save model
-    model.save_model('../models/xgboost_full.model')
+    model.save_model('models/xgboost_full.model')
     print("\nModel saved to 'xgboost_full.model'")
 
 if __name__ == "__main__":

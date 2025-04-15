@@ -58,14 +58,14 @@ def create_basic_features(df):
 
 if __name__ == "__main__":
     # Load the cleaned data
-    df = pd.read_csv('../data/dataset_mood_smartphone_cleaned.csv')
+    df = pd.read_csv('data/dataset_mood_smartphone_cleaned.csv')
     df['time'] = pd.to_datetime(df['time'], format='mixed')
     
     # Create basic features
     features = create_basic_features(df)
     
     # Save features
-    features.to_csv('../data/mood_prediction_simple_features.csv', index=False)
+    features.to_csv('data/mood_prediction_simple_features.csv', index=False)
     print("\nFeature Summary:")
     print(f"Total features: {len(features.columns)}")
     print("\nBasic features created:")

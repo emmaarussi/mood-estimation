@@ -116,16 +116,16 @@ def plot_results(y_true, y_pred, dates, title="Predictions vs Actual"):
     plt.legend()
     
     plt.tight_layout()
-    plt.savefig(f'../data_analysis/plots/modeling/{title.lower().replace(" ", "_")}.png')
+    plt.savefig(f'data_analysis/plots/modeling/{title.lower().replace(" ", "_")}.png')
     plt.close()
 
 def main():
     # Load data
     print("Loading data...")
-    df = pd.read_csv('../data/mood_prediction_simple_features.csv')
+    df = pd.read_csv('data/mood_prediction_simple_features.csv')
     df['time'] = pd.to_datetime(df['time'])
     
-    # Prepare train/val/test splits
+    # Prepare train/val/test splits 
     train_end = pd.to_datetime('2014-05-08')
     val_end = pd.to_datetime('2014-05-23')
     
@@ -198,14 +198,14 @@ def main():
     sns.barplot(data=feature_importance, x='importance', y='feature')
     plt.title("Feature Importance")
     plt.tight_layout()
-    plt.savefig('plots/feature_importance.png')
+    plt.savefig('data_analysis/plots/feature_importance.png')
     plt.close()
     
     print("\nFeature Importance:")
     print(feature_importance)
     
     # Save model
-    model.save_model('../models/xgboost_simple.model')
+    model.save_model('models/xgboost_simple.model')
     print("\nModel saved to 'models/xgboost_simple.model'")
 
 if __name__ == "__main__":

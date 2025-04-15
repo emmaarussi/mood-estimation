@@ -231,14 +231,14 @@ def prepare_features_for_modeling(df):
 
 def main():
     # Load the cleaned data
-    df = pd.read_csv('../data/dataset_mood_smartphone_cleaned.csv')
+    df = pd.read_csv('data/dataset_mood_smartphone_cleaned.csv')
     df['time'] = pd.to_datetime(df['time'], format='mixed')
     
     # Create features
     features = prepare_features_for_modeling(df)
     
     # Save features
-    features.to_csv('../data/mood_prediction_features.csv', index=False)
+    features.to_csv('data/mood_prediction_features.csv', index=False)
     print("Features saved to 'data/mood_prediction_features.csv'")
     
     # Print feature summary
