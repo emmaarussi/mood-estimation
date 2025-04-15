@@ -93,8 +93,9 @@ def analyze_mood_data_patterns(df):
     """
     logger.info("Analyzing mood data patterns...")
     
-    # Filter for mood data only
+    # Filter for mood data only and convert to local time (assuming UTC)
     mood_data = df[df['variable'] == 'mood'].copy()
+    mood_data['time'] = pd.to_datetime(mood_data['time']).dt.tz_localize('UTC').dt.tz_convert('Europe/Amsterdam')
     mood_data = mood_data.sort_values(['id', 'time'])
     
     analysis = {}
@@ -145,11 +146,11 @@ def analyze_mood_data_patterns(df):
                 gap_distribution['48h+'] += 1
         
         # Calculate active hours (when users typically record)
-        active_hours = user_data['time'].dt.hour.value_counts()
-        morning_records = active_hours[6:12].sum() if not active_hours.empty else 0
-        afternoon_records = active_hours[12:18].sum() if not active_hours.empty else 0
-        evening_records = active_hours[18:24].sum() if not active_hours.empty else 0
-        night_records = active_hours[0:6].sum() if not active_hours.empty else 0
+        hours = user_data['time'].dt.hour
+        morning_records = hours[(hours >= 6) & (hours < 12)].count()
+        afternoon_records = hours[(hours >= 12) & (hours < 18)].count()
+        evening_records = hours[(hours >= 18) & (hours < 24)].count()
+        night_records = hours[(hours >= 0) & (hours < 6)].count()
         
         user_patterns.append({
             'user_id': user_id,
@@ -181,7 +182,15 @@ def analyze_mood_data_patterns(df):
     
     # Analyze recording patterns
     all_recording_dist = pd.DataFrame([p['recording_distribution'] for p in user_patterns])
-    peak_recording_time = all_recording_dist.mean().idxmax()
+    mean_dist = all_recording_dist.mean()
+    peak_recording_time = mean_dist.idxmax()
+    
+    # Log recording distribution
+    logger.info("Recording time distribution:")
+    logger.info(f"  Morning (6-12): {mean_dist['morning']:.1f} records")
+    logger.info(f"  Afternoon (12-18): {mean_dist['afternoon']:.1f} records")
+    logger.info(f"  Evening (18-24): {mean_dist['evening']:.1f} records")
+    logger.info(f"  Night (0-6): {mean_dist['night']:.1f} records")
     
     analysis['summary'] = {
         'records_per_day': {
@@ -428,19 +437,7 @@ def save_analysis_report(analysis, base_filename='analysis_report'):
             f"  - Unique values: {stats['unique_values']}"
         ])
     
-    # ML Models
-    txt_content.append("\nRecommended ML Models:")
-    for model in analysis['ml_recommendations']['suitable_models']:
-        txt_content.append(f"✓ {model}")
-    
-    txt_content.append("\nNot Recommended ML Models:")
-    for model in analysis['ml_recommendations']['unsuitable_models']:
-        txt_content.append(f"✗ {model}")
-    
-    if analysis['ml_recommendations']['notes']:
-        txt_content.append("\nImportant Notes:")
-        for note in analysis['ml_recommendations']['notes']:
-            txt_content.append(f"! {note}")
+
     
     # Save text file
     txt_file = f"{base_filename}.txt"
