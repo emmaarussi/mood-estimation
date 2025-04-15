@@ -57,7 +57,7 @@ def analyze_circumplex_relationship(df):
     plt.title('Arousal vs. Valence (colored by mood)')
     
     plt.tight_layout()
-    plt.savefig('plots/circumplex_relationships.png')
+    plt.savefig('feature_engineering/plots/circumplex_relationships.png')
     plt.close()
     
     return merged
@@ -85,7 +85,7 @@ def analyze_temporal_patterns(df):
     plt.ylabel('Mood')
     
     plt.tight_layout()
-    plt.savefig('plots/temporal_patterns.png')
+    plt.savefig('feature_engineering/plots/temporal_patterns.png')
     plt.close()
 
 def analyze_app_usage(df):
@@ -111,7 +111,7 @@ def analyze_app_usage(df):
     plt.title('Distribution of Productive vs Entertainment App Usage Ratio')
     plt.xlabel('Ratio (Productive/Entertainment time)')
     plt.ylabel('Count')
-    plt.savefig('plots/app_usage_ratio.png')
+    plt.savefig('feature_engineering/plots/app_usage_ratio.png')
     plt.close()
     
     return daily_ratio
@@ -139,12 +139,12 @@ def analyze_communication_patterns(df):
     plt.xlabel('Hour of Day')
     plt.ylabel('Number of Events')
     plt.legend()
-    plt.savefig('plots/communication_patterns.png')
+    plt.savefig('feature_engineering/plots/communication_patterns.png')
     plt.close()
 
 def main():
     # Load data
-    df = load_and_prepare_data('../data/dataset_mood_smartphone_cleaned.csv')
+    df = load_and_prepare_data('data/dataset_mood_smartphone_cleaned.csv')
     
     # Run analyses
     circumplex_data = analyze_circumplex_relationship(df)
