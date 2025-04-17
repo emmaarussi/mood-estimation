@@ -3,7 +3,7 @@ import numpy as np
 import xgboost as xgb
 from sklearn.metrics import r2_score, mean_squared_error
 import matplotlib.pyplot as plt
-import seaborn as sns
+import optuna
 from datetime import datetime, timedelta
 
 def smape(y_true, y_pred):
@@ -82,6 +82,8 @@ def evaluate_predictions(y_true, y_pred, title="Model Performance"):
     """Calculate and display multiple performance metrics"""
     metrics = {
         'R²': r2_score(y_true, y_pred),
+        'MSE': mean_squared_error(y_true, y_pred),
+        'MAE': np.mean(np.abs(y_true - y_pred)),
         'RMSE': np.sqrt(mean_squared_error(y_true, y_pred)),
         'SMAPE': smape(y_true, y_pred),
         'WMAPE': wmape(y_true, y_pred)
@@ -107,7 +109,6 @@ def plot_results(y_true, y_pred, dates, title="Predictions vs Actual"):
     
     # Time series plot
     plt.subplot(2, 1, 2)
-    dates = pd.to_datetime(dates)
     plt.plot(dates, y_true, label='Actual', alpha=0.7)
     plt.plot(dates, y_pred, label='Predicted', alpha=0.7)
     plt.xlabel("Date")
@@ -119,35 +120,49 @@ def plot_results(y_true, y_pred, dates, title="Predictions vs Actual"):
     plt.savefig(f'data_analysis/plots/modeling/{title.lower().replace(" ", "_")}.png')
     plt.close()
 
+def objective(trial, X_train, X_val, y_train, y_val):
+    """Optuna objective function for hyperparameter optimization"""
+    param = {
+        'max_depth': trial.suggest_int('max_depth', 2, 7),
+        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+        'n_estimators': trial.suggest_int('n_estimators', 50, 400),
+        'min_child_weight': trial.suggest_int('min_child_weight', 1, 7),
+        'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+        'gamma': trial.suggest_float('gamma', 0, 5),
+        'objective': 'reg:squarederror',
+        'random_state': 42
+    }
+    
+    model = xgb.XGBRegressor(**param)
+    model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+    
+    y_pred = model.predict(X_val)
+    mse = mean_squared_error(y_val, y_pred)
+    return mse
+
 def main():
     # Load data
     print("Loading data...")
-    df = pd.read_csv('data/mood_prediction_simple_features.csv')
-    df['time'] = pd.to_datetime(df['time'])
+    features = pd.read_csv('data/mood_prediction_simple_features.csv')
+    features['time'] = pd.to_datetime(features['time'])
     
-    # Print initial stats
-    print(f"\nInitial shape: {df.shape}")
+    print("\nInitial shape:", features.shape)
+    
+    # Check mood distribution
     print("\nMood recording statistics:")
-    print(df['mood'].describe())
-    print(f"\nNaN in mood: {df['mood'].isna().sum()}")
-    
-    # Prepare train/val/test splits 
-    train_end = pd.to_datetime('2014-05-08')
-    val_end = pd.to_datetime('2014-05-23')
+    print(features['mood'].describe())
+    print("\nNaN in mood:", features['mood'].isna().sum())
     
     # Prepare features
     print("Preparing features...")
-    X, y, dates, user_ids = prepare_rolling_window_data(df)
-    dates = pd.to_datetime(dates)
+    X, y, dates, user_ids = prepare_rolling_window_data(features)
     
     # Split data
-    train_mask = dates <= train_end
-    val_mask = (dates > train_end) & (dates <= val_end)
-    test_mask = dates > val_end
+    train_end = pd.to_datetime('2014-05-08')
+    val_end = pd.to_datetime('2014-05-23')
     
-
-    
-    # Recompute masks after filtering
+    dates = pd.to_datetime(dates)
     train_mask = dates <= train_end
     val_mask = (dates > train_end) & (dates <= val_end)
     test_mask = dates > val_end
@@ -156,58 +171,64 @@ def main():
     X_val, y_val = X[val_mask], y[val_mask]
     X_test, y_test = X[test_mask], y[test_mask]
     
-    # Train model
-    print("Training model...")
-    model = xgb.XGBRegressor(
-        n_estimators=100,
-        learning_rate=0.1,
-        max_depth=3,
-        objective='reg:squarederror'
-    )
+    # Drop non-feature columns for training
+    feature_cols = X_train.columns.difference(['user_id', 'date'])
+    X_train_feat = X_train[feature_cols]
+    X_val_feat = X_val[feature_cols]
+    X_test_feat = X_test[feature_cols]
     
-    eval_set = [(X_val.drop(['user_id', 'date'], axis=1), y_val)]
-    model.fit(
-        X_train.drop(['user_id', 'date'], axis=1),
+    # Create and run study
+    print("\nPerforming Bayesian Optimization for hyperparameter tuning...")
+    study = optuna.create_study(direction='minimize')
+    study.optimize(lambda trial: objective(trial, X_train_feat, X_val_feat, y_train, y_val),
+                  n_trials=50, show_progress_bar=True)
+    
+    # Print best parameters
+    print("\nBest parameters found:")
+    for key, value in study.best_params.items():
+        print(f"{key}: {value}")
+    print(f"Best MSE: {study.best_value:.4f}")
+    
+    # Train final model with best parameters
+    best_params = study.best_params
+    best_params['objective'] = 'reg:squarederror'
+    best_params['random_state'] = 42
+    
+    best_model = xgb.XGBRegressor(**best_params)
+    best_model.fit(
+        X_train_feat,
         y_train,
-        eval_set=eval_set,
         verbose=False
     )
     
     # Make predictions
-    y_train_pred = model.predict(X_train.drop(['user_id', 'date'], axis=1))
-    y_val_pred = model.predict(X_val.drop(['user_id', 'date'], axis=1))
-    y_test_pred = model.predict(X_test.drop(['user_id', 'date'], axis=1))
+    y_train_pred = best_model.predict(X_train_feat)
+    y_val_pred = best_model.predict(X_val_feat)
+    y_test_pred = best_model.predict(X_test_feat)
     
-    # Evaluate performance
+    # Evaluate predictions
     train_metrics = evaluate_predictions(y_train, y_train_pred, "Training Performance")
     val_metrics = evaluate_predictions(y_val, y_val_pred, "Validation Performance")
     test_metrics = evaluate_predictions(y_test, y_test_pred, "Test Performance")
     
-    # Create visualizations
+    # Plot results
     plot_results(y_train, y_train_pred, dates[train_mask], "Training Results")
     plot_results(y_val, y_val_pred, dates[val_mask], "Validation Results")
     plot_results(y_test, y_test_pred, dates[test_mask], "Test Results")
     
     # Feature importance
     feature_importance = pd.DataFrame({
-        'feature': X_train.drop(['user_id', 'date'], axis=1).columns,
-        'importance': model.feature_importances_
+        'feature': feature_cols,
+        'importance': best_model.feature_importances_
     })
     feature_importance = feature_importance.sort_values('importance', ascending=False)
-    
-    plt.figure(figsize=(10, 6))
-    sns.barplot(data=feature_importance, x='importance', y='feature')
-    plt.title("Feature Importance")
-    plt.tight_layout()
-    plt.savefig('data_analysis/plots/modeling/feature_importance_simple.png')
-    plt.close()
     
     print("\nFeature Importance:")
     print(feature_importance)
     
     # Save model
-    model.save_model('models/xgboost_simple.model')
-    print("\nModel saved to 'models/xgboost_simple.model'")
+    best_model.save_model('models/xgboost_simple_bayesian.model')
+    print("\nModel saved to 'models/xgboost_simple_bayesian.model'")
 
 if __name__ == "__main__":
     main()

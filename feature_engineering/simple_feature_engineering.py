@@ -11,6 +11,11 @@ def create_basic_features(df):
     features = features.pivot(index=['id', 'time'], columns='variable', values='value').reset_index()
     features.columns = [col.replace('.', '_') for col in features.columns]
     
+    # Filter for timestamps where we have mood recordings
+    print(f"Initial shape: {features.shape}")
+    features = features.dropna(subset=['mood'])
+    print(f"Shape after filtering for mood recordings: {features.shape}")
+    
     # 1. Time Features
     features['hour'] = pd.to_datetime(features['time']).dt.hour
     features['is_weekend'] = pd.to_datetime(features['time']).dt.dayofweek.isin([5, 6]).astype(int)

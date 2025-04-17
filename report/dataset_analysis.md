@@ -112,20 +112,3 @@
 * **Mean:** 88.07 ± 119.73
 * **Missing:** 0.0%
 * **Unique values:** 767
-
-## Machine Learning Model Recommendations
-
-### Recommended Models
-✅ Irregular time series models (e.g., Neural ODEs)
-✅ GRU/LSTM with time delta features
-✅ Random Forest
-✅ Gradient Boosting (XGBoost, LightGBM)
-✅ Linear/Logistic Regression
-✅ SVM
-✅ Deep Neural Networks
-✅ Transformers with temporal encoding
-✅ Multi-task Learning Models
-
-### Not Recommended Models
-❌ ARIMA/SARIMA
-❌ Basic RNNs

@@ -3,7 +3,7 @@ import numpy as np
 import xgboost as xgb
 from sklearn.metrics import r2_score, mean_squared_error
 import matplotlib.pyplot as plt
-import seaborn as sns
+import optuna
 from datetime import datetime, timedelta
 
 def smape(y_true, y_pred):
@@ -13,8 +13,6 @@ def smape(y_true, y_pred):
 def wmape(y_true, y_pred):
     """Weighted Mean Absolute Percentage Error"""
     return np.sum(np.abs(y_true - y_pred)) / np.sum(np.abs(y_true)) * 100
-
-
 
 def evaluate_predictions(y_true, y_pred, title="Model Performance"):
     """Calculate and display multiple performance metrics"""
@@ -58,27 +56,48 @@ def plot_results(y_true, y_pred, dates, title="Predictions vs Actual"):
     plt.savefig(f'data_analysis/plots/modeling/{title.lower().replace(" ", "_")}.png')
     plt.close()
 
+def objective(trial, X_train, X_val, y_train, y_val):
+    """Optuna objective function for hyperparameter optimization"""
+    param = {
+        'max_depth': trial.suggest_int('max_depth', 2, 7),
+        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+        'n_estimators': trial.suggest_int('n_estimators', 50, 400),
+        'min_child_weight': trial.suggest_int('min_child_weight', 1, 7),
+        'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+        'gamma': trial.suggest_float('gamma', 0, 5),
+        'objective': 'reg:squarederror',
+        'random_state': 42
+    }
+    
+    model = xgb.XGBRegressor(**param)
+    model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+    
+    y_pred = model.predict(X_val)
+    mse = mean_squared_error(y_val, y_pred)
+    return mse
+
 def main():
     # Load data
     print("Loading data...")
     features = pd.read_csv('data/mood_prediction_features.csv')
-    features['time'] = pd.to_datetime(features['time'], format='mixed')
+    features['time'] = pd.to_datetime(features['time'])
     
-    # Filter for rows where we have mood recordings
     print("\nInitial shape:", features.shape)
-    features = features.dropna(subset=['mood'])
-    print("Shape after filtering for mood recordings:", features.shape)
     
-    # Check data
+    # Check mood distribution
     print("\nMood recording statistics:")
     print(features['mood'].describe())
     
-    # Check feature NaN percentages
-    print("\nFeature NaN percentages:")
+    # Check for NaN values
     nan_percentages = features.isna().mean() * 100
-    print(nan_percentages.sort_values(ascending=False).head())
+    print("\nFeature NaN percentages:")
+    print(nan_percentages[nan_percentages > 0])
     
-    # Prepare train/val/test splits
+    # Handle NaN values
+    features = features.fillna(0)  # Replace NaN with 0 for now
+    
+    # Split data
     train_end = pd.to_datetime('2014-05-08')
     val_end = pd.to_datetime('2014-05-23')
     
@@ -91,21 +110,21 @@ def main():
                (features['time'] <= (val_end - pd.Timedelta(days=buffer_days)))
     test_mask = features['time'] > (val_end + pd.Timedelta(days=buffer_days))
     
-    # Drop buffer periods
-    features = features[train_mask | val_mask | test_mask].copy()
+    # Calculate user statistics only from training data
+    user_stats = features[train_mask].groupby('id')['mood'].agg(['mean', 'std']).rename(
+        columns={'mean': 'user_avg_mood', 'std': 'user_std_mood'})
+    
+    # Merge user statistics back
+    features = features.merge(user_stats, on='id', how='left')
+    
+    # Fill remaining NaN values with global statistics
+    features = features.fillna(features[train_mask][['mood']].mean())
     
     # Handle categorical variables
     features = pd.get_dummies(features, columns=['time_of_day'])
     
     # Get feature columns (exclude id, time, and target)
     feature_cols = features.columns.difference(['id', 'time', 'mood'])
-    
-    # Fill missing values
-    for col in feature_cols:
-        if features[col].dtype in [np.float64, np.int64]:
-            features[col] = features[col].fillna(features[col].mean())
-        else:
-            features[col] = features[col].fillna(0)
     
     # Split data
     X_train = features[train_mask][feature_cols]
@@ -115,39 +134,37 @@ def main():
     X_test = features[test_mask][feature_cols]
     y_test = features[test_mask]['mood']
     
-    # Train model with better parameters
-    print("Training model...")
-    model = xgb.XGBRegressor(
-        n_estimators=200,
-        learning_rate=0.05,
-        max_depth=4,
-        min_child_weight=2,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        gamma=1,
-        objective='reg:squarederror',
-        random_state=42
-    )
+    # Create and run study
+    print("\nPerforming Bayesian Optimization for hyperparameter tuning...")
+    study = optuna.create_study(direction='minimize')
+    study.optimize(lambda trial: objective(trial, X_train, X_val, y_train, y_val),
+                  n_trials=50, show_progress_bar=True)
     
-    # Train with early stopping
-    eval_set = [(X_val, y_val)]
-    model.fit(
-        X_train, y_train,
-        eval_set=eval_set,
-        verbose=False
-    )
+    # Print best parameters
+    print("\nBest parameters found:")
+    for key, value in study.best_params.items():
+        print(f"{key}: {value}")
+    print(f"Best MSE: {study.best_value:.4f}")
+    
+    # Train final model with best parameters
+    best_params = study.best_params
+    best_params['objective'] = 'reg:squarederror'
+    best_params['random_state'] = 42
+    
+    best_model = xgb.XGBRegressor(**best_params)
+    best_model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
     
     # Make predictions
-    y_train_pred = model.predict(X_train)
-    y_val_pred = model.predict(X_val)
-    y_test_pred = model.predict(X_test)
+    y_train_pred = best_model.predict(X_train)
+    y_val_pred = best_model.predict(X_val)
+    y_test_pred = best_model.predict(X_test)
     
-    # Evaluate performance
+    # Evaluate predictions
     train_metrics = evaluate_predictions(y_train, y_train_pred, "Training Performance")
     val_metrics = evaluate_predictions(y_val, y_val_pred, "Validation Performance")
     test_metrics = evaluate_predictions(y_test, y_test_pred, "Test Performance")
     
-    # Create visualizations
+    # Plot results
     plot_results(y_train, y_train_pred, features[train_mask]['time'], "Training Results")
     plot_results(y_val, y_val_pred, features[val_mask]['time'], "Validation Results")
     plot_results(y_test, y_test_pred, features[test_mask]['time'], "Test Results")
@@ -155,23 +172,16 @@ def main():
     # Feature importance
     feature_importance = pd.DataFrame({
         'feature': feature_cols,
-        'importance': model.feature_importances_
+        'importance': best_model.feature_importances_
     })
     feature_importance = feature_importance.sort_values('importance', ascending=False)
-    
-    plt.figure(figsize=(12, 8))
-    sns.barplot(data=feature_importance.head(20), x='importance', y='feature')
-    plt.title("Top 20 Feature Importance")
-    plt.tight_layout()
-    plt.savefig('data_analysis/plots/modeling/feature_importance_full.png')
-    plt.close()
     
     print("\nTop 20 Features:")
     print(feature_importance.head(20))
     
     # Save model
-    model.save_model('models/xgboost_full.model')
-    print("\nModel saved to 'xgboost_full.model'")
+    best_model.save_model('models/xgboost_complex_bayesian.model')
+    print("\nModel saved to 'models/xgboost_complex_bayesian.model'")
 
 if __name__ == "__main__":
     main()

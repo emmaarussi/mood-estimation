@@ -42,20 +42,20 @@ def create_lag_features(df, variable, lags=[8, 16, 24, 48, 72, 168]):
         
         # Add rolling statistics
         if lag > 1:
-            # Rolling mean
+            # Rolling mean (using only past data)
             features[f'{variable}_rolling_mean_{lag}h'] = features.groupby('id')[variable].transform(
-                lambda x: x.rolling(window=lag, min_periods=1).mean()
+                lambda x: x.shift(1).rolling(window=lag, min_periods=1).mean()
             )
-            # Rolling std
+            # Rolling std (using only past data)
             features[f'{variable}_rolling_std_{lag}h'] = features.groupby('id')[variable].transform(
-                lambda x: x.rolling(window=lag, min_periods=1).std()
+                lambda x: x.shift(1).rolling(window=lag, min_periods=1).std()
             )
-            # Rolling min/max
+            # Rolling min/max (using only past data)
             features[f'{variable}_rolling_min_{lag}h'] = features.groupby('id')[variable].transform(
-                lambda x: x.rolling(window=lag, min_periods=1).min()
+                lambda x: x.shift(1).rolling(window=lag, min_periods=1).min()
             )
             features[f'{variable}_rolling_max_{lag}h'] = features.groupby('id')[variable].transform(
-                lambda x: x.rolling(window=lag, min_periods=1).max()
+                lambda x: x.shift(1).rolling(window=lag, min_periods=1).max()
             )
     
     return features
@@ -69,12 +69,12 @@ def create_activity_features(df, window_sizes=[24, 48, 72, 168]):
         # Activity intensity (if column exists)
         if 'activity' in features.columns:
             features[f'activity_intensity_{window}h'] = features.groupby('id')['activity'].transform(
-                lambda x: x.rolling(window=window, min_periods=1).mean()
+                lambda x: x.shift(1).rolling(window=window, min_periods=1).mean()
             )
             
             # Activity variability
             features[f'activity_variability_{window}h'] = features.groupby('id')['activity'].transform(
-                lambda x: x.rolling(window=window, min_periods=1).std()
+                lambda x: x.shift(1).rolling(window=window, min_periods=1).std()
             )
         else:
             features[f'activity_intensity_{window}h'] = 0
@@ -83,7 +83,7 @@ def create_activity_features(df, window_sizes=[24, 48, 72, 168]):
         # Screen time (if column exists)
         if 'screen' in features.columns:
             features[f'screen_time_{window}h'] = features.groupby('id')['screen'].transform(
-                lambda x: x.rolling(window=window, min_periods=1).sum()
+                lambda x: x.shift(1).rolling(window=window, min_periods=1).sum()
             )
         else:
             features[f'screen_time_{window}h'] = 0
