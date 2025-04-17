@@ -10,7 +10,6 @@ def create_temporal_features(df):
     # Basic time features
     features['hour'] = features['time'].dt.hour
     features['day_of_week'] = features['time'].dt.dayofweek
-    features['is_weekend'] = features['day_of_week'].isin([5, 6]).astype(int)
     features['month'] = features['time'].dt.month
     
     # Time of day categories
@@ -28,7 +27,7 @@ def create_temporal_features(df):
     
     return features
 
-def create_lag_features(df, variable, lags=[8, 16, 24, 48, 72, 168]):
+def create_lag_features(df, variable, lags=[24, 72, 168]):
     """Create lagged features for a given variable"""
     features = df.copy()
     
@@ -37,30 +36,33 @@ def create_lag_features(df, variable, lags=[8, 16, 24, 48, 72, 168]):
     
     # Create lag features
     for lag in lags:
-        lag_name = f'{variable}_lag_{lag}h'
-        features[lag_name] = features.groupby('id')[variable].shift(lag)
+        # Convert lag hours to number of records (assuming hourly data)
+        lag_periods = lag
         
-        # Add rolling statistics
+        # Create basic lag feature
+        lag_name = f'{variable}_lag_{lag}h'
+        features[lag_name] = features.groupby('id')[variable].shift(1)  # Shift by 1 to avoid using current value
+        
+        # Add rolling statistics using only past data
         if lag > 1:
-            # Rolling mean (using only past data)
+            # Use shift(1) to exclude current value, then calculate rolling stats
+            # This ensures we only use data that would have been available at prediction time
             features[f'{variable}_rolling_mean_{lag}h'] = features.groupby('id')[variable].transform(
-                lambda x: x.shift(1).rolling(window=lag, min_periods=1).mean()
+                lambda x: x.shift(1).rolling(window=lag_periods, min_periods=1, closed='left').mean()
             )
-            # Rolling std (using only past data)
             features[f'{variable}_rolling_std_{lag}h'] = features.groupby('id')[variable].transform(
-                lambda x: x.shift(1).rolling(window=lag, min_periods=1).std()
+                lambda x: x.shift(1).rolling(window=lag_periods, min_periods=1, closed='left').std()
             )
-            # Rolling min/max (using only past data)
             features[f'{variable}_rolling_min_{lag}h'] = features.groupby('id')[variable].transform(
-                lambda x: x.shift(1).rolling(window=lag, min_periods=1).min()
+                lambda x: x.shift(1).rolling(window=lag_periods, min_periods=1, closed='left').min()
             )
             features[f'{variable}_rolling_max_{lag}h'] = features.groupby('id')[variable].transform(
-                lambda x: x.shift(1).rolling(window=lag, min_periods=1).max()
+                lambda x: x.shift(1).rolling(window=lag_periods, min_periods=1, closed='left').max()
             )
     
     return features
 
-def create_activity_features(df, window_sizes=[24, 48, 72, 168]):
+def create_activity_features(df, window_sizes=[24, 72, 168]):
     """Create activity-based features"""
     features = df.copy()
     
@@ -69,12 +71,12 @@ def create_activity_features(df, window_sizes=[24, 48, 72, 168]):
         # Activity intensity (if column exists)
         if 'activity' in features.columns:
             features[f'activity_intensity_{window}h'] = features.groupby('id')['activity'].transform(
-                lambda x: x.shift(1).rolling(window=window, min_periods=1).mean()
+                lambda x: x.shift(1).rolling(window=window, min_periods=1, closed='left').mean()
             )
             
             # Activity variability
             features[f'activity_variability_{window}h'] = features.groupby('id')['activity'].transform(
-                lambda x: x.shift(1).rolling(window=window, min_periods=1).std()
+                lambda x: x.shift(1).rolling(window=window, min_periods=1, closed='left').std()
             )
         else:
             features[f'activity_intensity_{window}h'] = 0
@@ -83,14 +85,14 @@ def create_activity_features(df, window_sizes=[24, 48, 72, 168]):
         # Screen time (if column exists)
         if 'screen' in features.columns:
             features[f'screen_time_{window}h'] = features.groupby('id')['screen'].transform(
-                lambda x: x.shift(1).rolling(window=window, min_periods=1).sum()
+                lambda x: x.shift(1).rolling(window=window, min_periods=1, closed='left').sum()
             )
         else:
             features[f'screen_time_{window}h'] = 0
     
     return features
 
-def create_communication_features(df, window_sizes=[24, 48, 72, 168]):
+def create_communication_features(df, window_sizes=[24, 72, 168]):
     """Create communication-based features"""
     features = df.copy()
     
@@ -98,7 +100,7 @@ def create_communication_features(df, window_sizes=[24, 48, 72, 168]):
         # Call frequency (if column exists)
         if 'call' in features.columns:
             features[f'call_frequency_{window}h'] = features.groupby('id')['call'].transform(
-                lambda x: x.rolling(window=window, min_periods=1).sum()
+                lambda x: x.shift(1).rolling(window=window, min_periods=1, closed='left').sum()
             )
         else:
             features[f'call_frequency_{window}h'] = 0
@@ -106,7 +108,7 @@ def create_communication_features(df, window_sizes=[24, 48, 72, 168]):
         # SMS frequency (if column exists)
         if 'sms' in features.columns:
             features[f'sms_frequency_{window}h'] = features.groupby('id')['sms'].transform(
-                lambda x: x.rolling(window=window, min_periods=1).sum()
+                lambda x: x.shift(1).rolling(window=window, min_periods=1, closed='left').sum()
             )
         else:
             features[f'sms_frequency_{window}h'] = 0
@@ -118,7 +120,7 @@ def create_communication_features(df, window_sizes=[24, 48, 72, 168]):
     
     return features
 
-def create_app_usage_features(df, window_sizes=[24, 48, 72, 168]):
+def create_app_usage_features(df, window_sizes=[24, 72, 168]):
     """Create app usage-based features"""
     features = df.copy()
     
@@ -148,7 +150,7 @@ def create_app_usage_features(df, window_sizes=[24, 48, 72, 168]):
     
     return features
 
-def create_circumplex_features(df, window_sizes=[24, 48, 72, 168]):
+def create_circumplex_features(df, window_sizes=[24, 72, 168]):
     """Create features based on circumplex model of affect"""
     features = df.copy()
     
@@ -156,10 +158,10 @@ def create_circumplex_features(df, window_sizes=[24, 48, 72, 168]):
         # Arousal features (if column exists)
         if 'circumplex.arousal' in features.columns:
             features[f'arousal_mean_{window}h'] = features.groupby('id')['circumplex.arousal'].transform(
-                lambda x: x.rolling(window=window, min_periods=1).mean()
+                lambda x: x.shift(1).rolling(window=window, min_periods=1, closed='left').mean()
             )
             features[f'arousal_std_{window}h'] = features.groupby('id')['circumplex.arousal'].transform(
-                lambda x: x.rolling(window=window, min_periods=1).std()
+                lambda x: x.shift(1).rolling(window=window, min_periods=1, closed='left').std()
             )
         else:
             features[f'arousal_mean_{window}h'] = 0
@@ -168,10 +170,10 @@ def create_circumplex_features(df, window_sizes=[24, 48, 72, 168]):
         # Valence features (if column exists)
         if 'circumplex.valence' in features.columns:
             features[f'valence_mean_{window}h'] = features.groupby('id')['circumplex.valence'].transform(
-                lambda x: x.rolling(window=window, min_periods=1).mean()
+                lambda x: x.shift(1).rolling(window=window, min_periods=1, closed='left').mean()
             )
             features[f'valence_std_{window}h'] = features.groupby('id')['circumplex.valence'].transform(
-                lambda x: x.rolling(window=window, min_periods=1).std()
+                lambda x: x.shift(1).rolling(window=window, min_periods=1, closed='left').std()
             )
         else:
             features[f'valence_mean_{window}h'] = 0
@@ -211,20 +213,33 @@ def prepare_features_for_modeling(df):
     # Convert to wide format
     features = pivot_long_to_wide(df)
     
-    # Apply feature creation functions
+    # Sort by time to ensure correct temporal order
+    features = features.sort_values(['id', 'time'])
+    
+    # Apply feature creation functions in order of dependency
+    # 1. First, create basic temporal features (these don't depend on any other features)
     features = create_temporal_features(features)
+    
+    # 2. Create lag features for mood (these should only use past mood values)
     features = create_lag_features(features, 'mood')
+    
+    # 3. Create activity and behavioral features
     features = create_activity_features(features)
     features = create_communication_features(features)
     features = create_app_usage_features(features)
     features = create_circumplex_features(features)
     
-    # Add user-specific features
-    features['user_avg_mood'] = features.groupby('id')['mood'].transform('mean')
-    features['user_std_mood'] = features.groupby('id')['mood'].transform('std')
+    # Calculate time since last mood report using only past data
+    features['time_since_last_mood'] = features.groupby('id')['time'].transform(
+        lambda x: x.diff().dt.total_seconds() / 3600
+    ).shift(1)  # Shift to only use past data
     
-    # Calculate time since last mood report
-    features['time_since_last_mood'] = features.groupby('id')['time'].diff().dt.total_seconds() / 3600
+    # Convert categorical columns to numeric before filling NaN
+    if 'time_of_day' in features.columns:
+        features['time_of_day'] = features['time_of_day'].astype('category').cat.codes
+    
+    # Fill NaN values that might have been created by shifting
+    features = features.fillna(0)
     
     print("Feature creation complete!")
     return features

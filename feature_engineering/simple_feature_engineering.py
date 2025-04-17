@@ -11,53 +11,82 @@ def create_basic_features(df):
     features = features.pivot(index=['id', 'time'], columns='variable', values='value').reset_index()
     features.columns = [col.replace('.', '_') for col in features.columns]
     
+    # Sort by user and time
+    features = features.sort_values(['id', 'time'])
+    
     # Filter for timestamps where we have mood recordings
     print(f"Initial shape: {features.shape}")
     features = features.dropna(subset=['mood'])
     print(f"Shape after filtering for mood recordings: {features.shape}")
     
-    # 1. Time Features
+    # 1. Time Features (no leakage - only current timestamp)
     features['hour'] = pd.to_datetime(features['time']).dt.hour
-    features['is_weekend'] = pd.to_datetime(features['time']).dt.dayofweek.isin([5, 6]).astype(int)
+    features['day_of_week'] = pd.to_datetime(features['time']).dt.dayofweek
     
-    # 2. Recent History (last 24h)
-    features = features.sort_values(['id', 'time'])
+    # 2. Recent History (24h window, excluding current)
     features['prev_mood'] = features.groupby('id')['mood'].shift(1)
-    features['mood_change'] = features['mood'] - features['prev_mood']
+    features['mood_std_24h'] = features.groupby('id')['mood'].transform(
+        lambda x: x.shift(1).rolling(window=24, min_periods=1, closed='left').std()
+    )
+    features['mood_trend'] = features.groupby('id')['prev_mood'].transform(
+        lambda x: x.diff(periods=24)  # 24-hour trend using only past data
+    )
     
-    # 3. Activity Level
+    # 3. Activity Level (24h window, excluding current)
     if 'activity' in features.columns:
-        features['recent_activity'] = features.groupby('id')['activity'].transform(
-            lambda x: x.rolling(window=24, min_periods=1).mean()
+        features['activity_mean_24h'] = features.groupby('id')['activity'].transform(
+            lambda x: x.shift(1).rolling(window=24, min_periods=1, closed='left').mean()
+        )
+        features['activity_std_24h'] = features.groupby('id')['activity'].transform(
+            lambda x: x.shift(1).rolling(window=24, min_periods=1, closed='left').std()
         )
     else:
-        features['recent_activity'] = 0
+        features['activity_mean_24h'] = 0
+        features['activity_std_24h'] = 0
         
-    # 4. Screen Time
+    # 4. Screen Time (24h window, excluding current)
     if 'screen' in features.columns:
-        features['daily_screen_time'] = features.groupby('id')['screen'].transform(
-            lambda x: x.rolling(window=24, min_periods=1).sum()
+        features['screen_time_24h'] = features.groupby('id')['screen'].transform(
+            lambda x: x.shift(1).rolling(window=24, min_periods=1, closed='left').sum()
         )
     else:
-        features['daily_screen_time'] = 0
+        features['screen_time_24h'] = 0
     
-    # 5. Communication
-    # Combine all communication apps
+    # 5. Communication (24h window, excluding current)
     comm_cols = [col for col in features.columns if 'communication' in col.lower()]
-    features['communication_time'] = features[comm_cols].sum(axis=1) if comm_cols else 0
-    
-    # 6. Basic Circumplex
-    if 'circumplex_arousal' in features.columns and 'circumplex_valence' in features.columns:
-        features['emotion_intensity'] = np.sqrt(
-            features['circumplex_arousal']**2 + features['circumplex_valence']**2
-        )
+    if comm_cols:
+        features['communication_24h'] = features.groupby('id')[comm_cols].transform(
+            lambda x: x.shift(1).rolling(window=24, min_periods=1, closed='left').sum()
+        ).sum(axis=1)
     else:
-        features['emotion_intensity'] = 0
+        features['communication_24h'] = 0
     
-    # 7. User baseline
-    features['user_avg_mood'] = features.groupby('id')['mood'].transform('mean')
-    features['mood_vs_average'] = features['mood'] - features['user_avg_mood']
+    # 6. Circumplex (24h window, excluding current)
+    if 'circumplex_arousal' in features.columns and 'circumplex_valence' in features.columns:
+        # Calculate emotion metrics using past 24h
+        arousal_24h = features.groupby('id')['circumplex_arousal'].transform(
+            lambda x: x.shift(1).rolling(window=24, min_periods=1, closed='left').mean()
+        )
+        valence_24h = features.groupby('id')['circumplex_valence'].transform(
+            lambda x: x.shift(1).rolling(window=24, min_periods=1, closed='left').mean()
+        )
+        features['emotion_intensity_24h'] = np.sqrt(arousal_24h**2 + valence_24h**2)
+    else:
+        features['emotion_intensity_24h'] = 0
     
+    # 7. User baseline (expanding window of past data only)
+    features['user_avg_mood'] = features.groupby('id')['mood'].transform(
+        lambda x: x.shift(1).expanding().mean()
+    )
+    features['mood_vs_baseline'] = features['prev_mood'] - features['user_avg_mood']
+    
+    # 8. Data quality
+    features['measurements_24h'] = features.groupby('id')['mood'].transform(
+        lambda x: x.shift(1).rolling(window=24, min_periods=1, closed='left').count()
+    )
+    
+    print("Basic feature creation complete!")
+    return features
     print("Basic feature creation complete!")
     return features
 
