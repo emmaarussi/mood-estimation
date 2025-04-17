@@ -229,17 +229,42 @@ def prepare_features_for_modeling(df):
     print("Feature creation complete!")
     return features
 
-def main():
+def main(input_file=None, output_file=None):
+    import sys
+    
+    # Handle input/output paths
+    if input_file is None:
+        if len(sys.argv) > 1:
+            input_file = sys.argv[1]
+        else:
+            input_file = 'data/dataset_mood_smartphone_cleaned.csv'
+    
+    if output_file is None:
+        if len(sys.argv) > 2:
+            output_file = sys.argv[2]
+        else:
+            output_file = 'data/mood_prediction_features.csv'
+    
+    # Ensure input file exists
+    if not os.path.exists(input_file):
+        print(f"Error: Input file not found: {input_file}")
+        sys.exit(1)
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    
     # Load the cleaned data
-    df = pd.read_csv('data/dataset_mood_smartphone_cleaned.csv')
+    print(f"Loading data from {input_file}...")
+    df = pd.read_csv(input_file)
     df['time'] = pd.to_datetime(df['time'], format='mixed')
     
     # Create features
     features = prepare_features_for_modeling(df)
     
     # Save features
-    features.to_csv('data/mood_prediction_features.csv', index=False)
-    print("Features saved to 'data/mood_prediction_features.csv'")
+    print(f"Saving features to {output_file}...")
+    features.to_csv(output_file, index=False)
+    print(f"Features saved to '{output_file}'")
     
     # Print feature summary
     print("\nFeature Summary:")
