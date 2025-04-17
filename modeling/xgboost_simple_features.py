@@ -119,10 +119,28 @@ def plot_results(y_true, y_pred, dates, title="Predictions vs Actual"):
     plt.savefig(f'data_analysis/plots/modeling/{title.lower().replace(" ", "_")}.png')
     plt.close()
 
-def main():
+def main(input_file=None):
+    import os
+    import sys
+    
+    # Handle input file path
+    if input_file is None:
+        if len(sys.argv) > 1:
+            input_file = sys.argv[1]
+        else:
+            input_file = 'data/mood_prediction_simple_features.csv'
+    
+    if not os.path.exists(input_file):
+        print(f"Error: Input file not found: {input_file}")
+        sys.exit(1)
+    
+    # Create necessary directories
+    os.makedirs('data_analysis/plots/modeling', exist_ok=True)
+    os.makedirs('models', exist_ok=True)
+    
     # Load data
     print("Loading data...")
-    df = pd.read_csv('data/mood_prediction_simple_features.csv')
+    df = pd.read_csv(input_file)
     df['time'] = pd.to_datetime(df['time'])
     
     # Print initial stats
@@ -144,8 +162,6 @@ def main():
     train_mask = dates <= train_end
     val_mask = (dates > train_end) & (dates <= val_end)
     test_mask = dates > val_end
-    
-
     
     # Recompute masks after filtering
     train_mask = dates <= train_end
