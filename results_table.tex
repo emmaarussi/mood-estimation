@@ -1,0 +1,67 @@
+\documentclass{article}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage[table]{xcolor}
+\usepackage{siunitx}
+
+\begin{document}
+
+% Performance Metrics Table
+\begin{table}[htbp]
+\centering
+\caption{Model Performance Metrics}
+\label{tab:performance}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Dataset} & \textbf{R²} & \textbf{RMSE} & \textbf{SMAPE (\%)} & \textbf{WMAPE (\%)} \\
+\midrule
+Training    & 0.872 & 0.446 & 101.66 & 44.46 \\
+Validation  & 0.691 & 1.256 & 76.23  & 61.18 \\
+Test        & 0.342 & 1.297 & 97.16  & 92.40 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Top Features Table
+\begin{table}[htbp]
+\centering
+\caption{Top 20 Most Important Features}
+\label{tab:features}
+\begin{tabular}{rlr}
+\toprule
+\textbf{Rank} & \textbf{Feature} & \textbf{Importance} \\
+\midrule
+1  & mood\_lag\_24h               & 0.322 \\
+2  & activity\_variability\_72h   & 0.110 \\
+3  & sms\_frequency\_168h         & 0.054 \\
+4  & call\_frequency\_168h        & 0.037 \\
+5  & mood\_rolling\_std\_72h      & 0.034 \\
+6  & mood\_rolling\_std\_24h      & 0.029 \\
+7  & day\_cos                     & 0.027 \\
+8  & mood\_rolling\_std\_168h     & 0.027 \\
+9  & mood\_rolling\_mean\_24h     & 0.026 \\
+10 & call\_frequency\_24h         & 0.024 \\
+11 & total\_communication\_168h   & 0.020 \\
+12 & screen\_time\_168h           & 0.019 \\
+13 & activity\_variability\_168h  & 0.019 \\
+14 & activity\_intensity\_24h     & 0.019 \\
+15 & hour                        & 0.018 \\
+\rowcolor{gray!15} 16 & gap\_category\_normal       & 0.018 \\
+17 & total\_communication\_72h    & 0.016 \\
+\rowcolor{gray!15} 18 & avg\_gap\_hours             & 0.014 \\
+19 & day\_sin                     & 0.013 \\
+20 & month                       & 0.013 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Key Findings
+\begin{itemize}
+\item The model achieves strong performance on the training set (R² = 0.87) but shows signs of overfitting when evaluated on test data (R² = 0.34).
+\item Previous mood state (mood\_lag\_24h) is by far the strongest predictor, accounting for 32.2\% of feature importance.
+\item Activity variability over 72 hours is the second most important feature (11.0\%).
+\item Gap-related features (highlighted) appear in positions 16 and 18, suggesting they provide meaningful but not dominant predictive value.
+\item Communication patterns (SMS, calls) and mood variability metrics are also strong predictors.
+\end{itemize}
+
+\end{document}
