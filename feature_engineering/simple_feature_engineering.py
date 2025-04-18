@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from sklearn.preprocessing import LabelEncoder
 
 def create_basic_features(df):
     """Create a simple set of features for initial analysis"""
@@ -60,6 +61,96 @@ def create_basic_features(df):
     
     print("Basic feature creation complete!")
     return features
+
+def prepare_rolling_window_data(df, window_size=7, categorical=False):
+    """Prepare data with rolling window features"""
+    # Sort by user and time
+    df = df.sort_values(['id', 'time'])
+    
+    # Create daily aggregates
+    daily = df.groupby(['id', df['time'].dt.date]).agg({
+        'mood': 'mean',
+        'recent_activity': 'mean',
+        'daily_screen_time': 'sum',
+        'communication_time': 'sum',
+        'circumplex_arousal': 'mean',
+        'circumplex_valence': 'mean',
+        'emotion_intensity': 'mean',
+        'hour': lambda x: len(x),  # number of measurements
+    }).reset_index()
+    daily.columns = ['id', 'date'] + list(daily.columns[2:])
+    daily['date'] = pd.to_datetime(daily['date'])
+    
+    # Create features from rolling windows
+    features = []
+    targets = []
+    dates = []
+    user_ids = []
+    
+    for user in daily['id'].unique():
+        user_data = daily[daily['id'] == user].copy()
+        
+        for i in range(len(user_data) - window_size):
+            window = user_data.iloc[i:i+window_size]
+            target_day = user_data.iloc[i+window_size]
+            
+            # Skip if gap is more than 1 day
+            if (target_day['date'] - window['date'].iloc[-1]).days > 1:
+                continue
+                
+            # Create features
+            feature_dict = {
+                'user_id': user,
+                'date': target_day['date'],
+                'measurements': window['hour'].mean(),
+                'mood_mean': window['mood'].mean(),
+                'mood_std': window['mood'].std(),
+                'mood_trend': window['mood'].iloc[-1] - window['mood'].iloc[0],
+                'mood_lag':window['mood'].iloc[-1],
+                'activity_roll_mean': window['recent_activity'].mean(),
+                'screen_time_mean': window['daily_screen_time'].mean(),
+                'communication_mean': window['communication_time'].mean(),
+                'arousal_mean': window['circumplex_arousal'].mean(),
+                'arousal_lag': window['circumplex_arousal'].iloc[-1],
+                'valence_mean': window['circumplex_valence'].mean(),
+                'valence_lag':window['circumplex_valence'].iloc[-1],
+                'emotion_mean': window['emotion_intensity'].mean(),
+                'emotion_lag':window['emotion_intensity'].iloc[-1],
+                'day_of_week': target_day['date'].dayofweek,
+                'is_weekend': target_day['date'].dayofweek >= 5
+            }
+            
+            features.append(feature_dict)
+            targets.append(target_day['mood'])
+            dates.append(target_day['date'])
+            user_ids.append(user)
+    
+    X = pd.DataFrame(features)
+    y = np.array(targets)
+    
+    X = pd.DataFrame(features)
+    y = np.array(targets)
+    encoder = None
+
+    if categorical:
+        labels = ['Low', 'High']
+        bins = [0.5, 6.5, 10.5]  # Low: 0.5-6.5, High: 6.5-10.5
+        y_categorical = pd.cut(y, bins=bins, labels=labels, right=True, include_lowest=True)
+        mask = ~pd.isna(y_categorical)
+        X = X[mask].reset_index(drop=True)
+        y_categorical = y_categorical[mask]
+        dates = np.array(dates)[mask]
+        user_ids = np.array(user_ids)[mask]
+        encoder = LabelEncoder()
+        y = encoder.fit_transform(y_categorical.astype(str))
+        
+        print(f"\nBinning mood scores into classes:")
+        print(f"  Bins: {bins}")
+        print(f"  Labels: {labels}")
+        print("  Number of samples in each bin:")
+        print(y_categorical.value_counts())
+
+    return X, y, dates, user_ids, encoder
 
 if __name__ == "__main__":
     import sys

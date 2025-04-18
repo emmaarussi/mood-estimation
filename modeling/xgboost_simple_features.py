@@ -2,145 +2,35 @@ import pandas as pd
 import numpy as np
 import xgboost as xgb
 from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.model_selection import GridSearchCV, GroupKFold
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime, timedelta
+import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-def smape(y_true, y_pred):
-    """Symmetric Mean Absolute Percentage Error"""
-    return 100 * np.mean(np.abs(y_pred - y_true) / ((np.abs(y_true) + np.abs(y_pred)) / 2))
-
-def wmape(y_true, y_pred):
-    """Weighted Mean Absolute Percentage Error"""
-    return np.sum(np.abs(y_true - y_pred)) / np.sum(np.abs(y_true)) * 100
-
-def prepare_rolling_window_data(df, window_size=7):
-    """Prepare data with rolling window features"""
-    # Sort by user and time
-    df = df.sort_values(['id', 'time'])
-    
-    # Create daily aggregates
-    daily = df.groupby(['id', df['time'].dt.date]).agg({
-        'mood': 'mean',
-        'recent_activity': 'mean',
-        'daily_screen_time': 'sum',
-        'communication_time': 'sum',
-        'circumplex_arousal': 'mean',
-        'circumplex_valence': 'mean',
-        'emotion_intensity': 'mean',
-        'hour': lambda x: len(x),  # number of measurements
-    }).reset_index()
-    daily.columns = ['id', 'date'] + list(daily.columns[2:])
-    daily['date'] = pd.to_datetime(daily['date'])
-    
-    # Create features from rolling windows
-    features = []
-    targets = []
-    dates = []
-    user_ids = []
-    
-    for user in daily['id'].unique():
-        user_data = daily[daily['id'] == user].copy()
-        
-        for i in range(len(user_data) - window_size):
-            window = user_data.iloc[i:i+window_size]
-            target_day = user_data.iloc[i+window_size]
-            
-            # Skip if gap is more than 1 day
-            if (target_day['date'] - window['date'].iloc[-1]).days > 1:
-                continue
-                
-            # Create features
-            feature_dict = {
-                'user_id': user,
-                'date': target_day['date'],
-                'measurements': window['hour'].mean(),
-                'mood_mean': window['mood'].mean(),
-                'mood_std': window['mood'].std(),
-                'mood_trend': window['mood'].iloc[-1] - window['mood'].iloc[0],
-                'mood_lag':window['mood'].iloc[-1],
-                'activity_roll_mean': window['recent_activity'].mean(),
-                'screen_time_mean': window['daily_screen_time'].mean(),
-                'communication_mean': window['communication_time'].mean(),
-                'arousal_mean': window['circumplex_arousal'].mean(),
-                'arousal_lag': window['circumplex_arousal'].iloc[-1],
-                'valence_mean': window['circumplex_valence'].mean(),
-                'valence_lag':window['circumplex_valence'].iloc[-1],
-                'emotion_mean': window['emotion_intensity'].mean(),
-                'emotion_lag':window['emotion_intensity'].iloc[-1],
-                'day_of_week': target_day['date'].dayofweek,
-                #'is_weekend': target_day['date'].dayofweek >= 5 not needed day of week already included
-            }
-            
-            features.append(feature_dict)
-            targets.append(target_day['mood'])
-            dates.append(target_day['date'])
-            user_ids.append(user)
-    
-    X = pd.DataFrame(features)
-    y = np.array(targets)
-    
-    return X, y, dates, user_ids
-
-def evaluate_predictions(y_true, y_pred, title="Model Performance"):
-    """Calculate and display multiple performance metrics"""
-    metrics = {
-        'R²': r2_score(y_true, y_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_true, y_pred)),
-        'SMAPE': smape(y_true, y_pred),
-        'WMAPE': wmape(y_true, y_pred)
-    }
-    
-    print(f"\n{title}:")
-    for metric, value in metrics.items():
-        print(f"{metric}: {value:.4f}")
-    
-    return metrics
-
-def plot_results(y_true, y_pred, dates, title="Predictions vs Actual"):
-    """Create visualization of predictions"""
-    plt.figure(figsize=(15, 10))
-    
-    # Scatter plot
-    plt.subplot(2, 1, 1)
-    plt.scatter(y_true, y_pred, alpha=0.5)
-    plt.plot([y_true.min(), y_true.max()], [y_true.min(), y_true.max()], 'r--')
-    plt.xlabel("Actual Mood")
-    plt.ylabel("Predicted Mood")
-    plt.title(f"{title} - Scatter Plot")
-    
-    # Time series plot
-    plt.subplot(2, 1, 2)
-    dates = pd.to_datetime(dates)
-    plt.plot(dates, y_true, label='Actual', alpha=0.7)
-    plt.plot(dates, y_pred, label='Predicted', alpha=0.7)
-    plt.xlabel("Date")
-    plt.ylabel("Mood")
-    plt.title(f"{title} - Time Series")
-    plt.legend()
-    
-    plt.tight_layout()
-    plt.savefig(f'data_analysis/plots/modeling/{title.lower().replace(" ", "_")}.png')
-    plt.close()
+from modeling.metrics import evaluate_predictions
+from feature_engineering.simple_feature_engineering import prepare_rolling_window_data
 
 def main(input_file=None):
-    import os
-    import sys
-    
+
     # Handle input file path
-    if input_file is None:
-        if len(sys.argv) > 1:
-            input_file = sys.argv[1]
-        else:
-            input_file = 'data/mood_prediction_simple_features.csv'
+    #if input_file is None:
+    #    if len(sys.argv) > 1:
+    #        input_file = sys.argv[1]
+    #    else:
+    #        input_file = 'data/mood_prediction_simple_features.csv'
     
-    if not os.path.exists(input_file):
-        print(f"Error: Input file not found: {input_file}")
-        sys.exit(1)
+    input_file = 'data/mood_prediction_simple_features.csv'
+    
+    #if not os.path.exists(input_file):
+    #    print(f"Error: Input file not found: {input_file}")
+    #    sys.exit(1)
     
     # Create necessary directories
-    os.makedirs('data_analysis/plots/modeling', exist_ok=True)
-    os.makedirs('models', exist_ok=True)
+    #os.makedirs('data_analysis/plots/modeling', exist_ok=True)
+    #os.makedirs('models', exist_ok=True)
     
     # Load data
     print("Loading data...")
@@ -159,7 +49,7 @@ def main(input_file=None):
     
     # Prepare features
     print("Preparing features...")
-    X, y, dates, user_ids = prepare_rolling_window_data(df, window_size=5)
+    X, y, dates, user_ids, encoder = prepare_rolling_window_data(df, window_size=5)
     dates = pd.to_datetime(dates)
     
     full_data = pd.concat([X, pd.Series(y, name='target_outcome')],axis=1)
@@ -173,7 +63,7 @@ def main(input_file=None):
         sorted_group = group.sort_values('date')
         n = len(sorted_group)
         
-        if n < 20:
+        if n < 10:
             continue
         
         train_end = int(n * 0.8)
@@ -191,39 +81,18 @@ def main(input_file=None):
     val_data = pd.concat(val_list).reset_index(drop=True)
     test_data = pd.concat(test_list).reset_index(drop=True)
     
-    # Split data
-    #train_mask = dates <= train_end
-    #val_mask = (dates > train_end) & (dates <= val_end)
-    #test_mask = dates > val_end
-    
-    # Recompute masks after filtering
-    #train_mask = dates <= train_end
-    #val_mask = (dates > train_end) & (dates <= val_end)
-    #test_mask = dates > val_end
-    
     X_train, y_train = train_data.drop('target_outcome', axis=1), train_data['target_outcome']
     X_val, y_val = val_data.drop('target_outcome', axis=1), val_data['target_outcome']
     X_test, y_test = test_data.drop('target_outcome', axis=1), test_data['target_outcome']
     
     # Train model
     print("Training model...")
-    #model = xgb.XGBRegressor(
-    #    n_estimators=100,
-    #    learning_rate=0.1,
-    #    max_depth=3,
-    #    objective='reg:squarederror'
-    #)
-    
+    # Baseline Model
     model = xgb.XGBRegressor(
-        n_estimators=200,
-        learning_rate=0.05,
-        max_depth=4,
-        min_child_weight=2,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        gamma=1,
-        objective='reg:squarederror',
-        random_state=42
+        n_estimators=100,
+        learning_rate=0.1,
+        max_depth=3,
+        objective='reg:squarederror'
     )
     
     eval_set = [(X_val.drop(['user_id', 'date'], axis=1), y_val)]
@@ -234,41 +103,165 @@ def main(input_file=None):
         verbose=False
     )
     
+    # Save model
+    model.save_model('models/baseline_xgboost_simple.model')
+    print("\nModel saved to 'models/baseline_xgboost_simple.model'")
+    
+    predict_evaluate_models(model, X_train, y_train, X_val, y_val, X_test, y_test, model_name="Baseline Model")
+    # Tuning Model
+    print("\n--- Starting Hyperparameter Tuning (GridSearchCV) ---")
+    param_grid = {
+        'learning_rate': [0.05, 0.1],       # Common effective rates
+        'n_estimators':   [100, 300, 500],  # Keep a range, interacts with learning_rate
+        'max_depth':      [3, 5, 7],        # Key depths to explore
+        'min_child_weight':[1, 3],          # Default and a slightly higher value
+        'subsample':      [0.8, 1.0],       # Common subsampling values
+        'colsample_bytree':[0.8, 1.0],       # Common feature sampling values
+        # 'gamma':          [0.0, 0.2],     # Can often be omitted for speed initially
+        # 'reg_alpha':      [0.0, 0.1],     # Can often be omitted for speed initially
+        'reg_lambda':     [1.0],            # Often start with default L2
+    }
+
+    xgb_base = xgb.XGBRegressor(objective='reg:squarederror', random_state=42)
+
+    # Define the GroupKFold cross-validator
+    n_splits_cv = 3 # Or 3, depending on data size and computation time
+    group_kfold = GroupKFold(n_splits=n_splits_cv)
+
+    # Get the user IDs corresponding to the training data rows
+    groups = X_train['user_id']
+
+    grid_search = GridSearchCV(
+        estimator=xgb_base,
+        param_grid=param_grid,
+        scoring='neg_root_mean_squared_error',
+        cv=group_kfold, # Use GroupKFold here
+        verbose=0,
+        n_jobs=-1
+    )
+
+    print(f"Performing {n_splits_cv}-Fold Group Cross-Validation for Tuning...")
+    # Pass the groups to the fit method
+    grid_search.fit(
+        X_train.drop(['user_id', 'date'], axis=1), # Features only
+        y_train,                                   # Target
+        groups=groups                              # User IDs for grouping folds
+    )
+
+    print(f"\nBest parameters found: {grid_search.best_params_}")
+    print(f"Best CV RMSE score: {-grid_search.best_score_:.4f}")
+
+    # --- 3. Evaluate Tuned Model ---
+    print("\n--- Evaluating Tuned Model ---")
+    best_model = grid_search.best_estimator_ # This is already refitted on the whole train set
+    
+    predict_evaluate_models(best_model, X_train, y_train, X_val, y_val, X_test, y_test, model_name="Tuned Model")
+    
+    # Save tuned model
+    best_model.save_model('models/xgboost_simple_tuned.model')
+    print("\nTuned model saved to 'models/xgboost_simple_tuned.model'")
+    
+
+def predict_evaluate_models(model, X_train, y_train, X_val, y_val, X_test, y_test, model_name="Model"):
+    """Makes predictions, evaluates, plots results, and shows feature importance for a given model."""
+
+    print(f"\n--- Evaluating {model_name} ---")
+
     # Make predictions
-    y_train_pred = model.predict(X_train.drop(['user_id', 'date'], axis=1))
-    y_val_pred = model.predict(X_val.drop(['user_id', 'date'], axis=1))
-    y_test_pred = model.predict(X_test.drop(['user_id', 'date'], axis=1))
+    # Prepare feature sets by dropping non-feature columns
+    X_train_features = X_train.drop(['user_id', 'date'], axis=1)
+    X_val_features = X_val.drop(['user_id', 'date'], axis=1)
+    X_test_features = X_test.drop(['user_id', 'date'], axis=1)
+
+    y_train_pred = model.predict(X_train_features)
+    y_val_pred = model.predict(X_val_features)
+    y_test_pred = model.predict(X_test_features)
+
+    # Evaluate performance using the passed-in true values and the predictions
+    train_metrics = evaluate_predictions(y_train, y_train_pred, f"{model_name} Training Performance")
+    val_metrics = evaluate_predictions(y_val, y_val_pred, f"{model_name} Validation Performance")
+    test_metrics = evaluate_predictions(y_test, y_test_pred, f"{model_name} Test Performance")
+
+    # Create visualizations using data and predictions
+    plot_results_scatter(y_train, y_train_pred, X_train, f"{model_name} Training Results scatter")
+    plot_results_scatter(y_val, y_val_pred, X_val, f"{model_name} Validation Results scatter")
+    plot_results_scatter(y_test, y_test_pred, X_test, f"{model_name} Test Results scatter")
+
+    plot_results_ts(y_train, y_train_pred, X_train, f"{model_name} Training Results TS")
+    plot_results_ts(y_val, y_val_pred, X_val, f"{model_name} Validation Results TS")
+    plot_results_ts(y_test, y_test_pred, X_test, f"{model_name} Test Results TS")
+
+    # Feature importance using the passed-in model and training features
+    print(f"\n--- Feature Importance ({model_name}) ---")
     
-    # Evaluate performance
-    train_metrics = evaluate_predictions(y_train, y_train_pred, "Training Performance")
-    val_metrics = evaluate_predictions(y_val, y_val_pred, "Validation Performance")
-    test_metrics = evaluate_predictions(y_test, y_test_pred, "Test Performance")
+    # Check if the model has feature_importances_ attribute (like XGBoost)
+    if hasattr(model, 'feature_importances_'):
+        feature_importance = pd.DataFrame({
+            'feature': X_train_features.columns, # Use columns from the feature set
+            'importance': model.feature_importances_
+        })
+        feature_importance = feature_importance.sort_values('importance', ascending=False)
+
+        plt.figure(figsize=(10, 6))
+        sns.barplot(data=feature_importance, x='importance', y='feature')
+        plt.title(f"Feature Importance ({model_name})")
+        plt.tight_layout()
+        # Make filenames unique for different models
+        filename_fi = f'data_analysis/plots/modeling/feature_importance_{model_name.lower().replace(" ", "_")}.png'
+        plt.savefig(filename_fi)
+        plt.close()
+
+        print(feature_importance)
+    else:
+        print(f"Model type {type(model).__name__} does not support feature importances.")
+
+    # Optionally return metrics if needed elsewhere
+    return train_metrics, val_metrics, test_metrics
     
-    # Create visualizations
-    plot_results(y_train, y_train_pred, dates[train_mask], "Training Results")
-    plot_results(y_val, y_val_pred, dates[val_mask], "Validation Results")
-    plot_results(y_test, y_test_pred, dates[test_mask], "Test Results")
+
+def plot_results_scatter(y_true, y_pred, dates, title="Scatter Predictions vs Actual"):
+    """Create visualization of predictions"""
+    plt.figure(figsize=(16, 8))
     
-    # Feature importance
-    feature_importance = pd.DataFrame({
-        'feature': X_train.drop(['user_id', 'date'], axis=1).columns,
-        'importance': model.feature_importances_
+    # Scatter plot
+    plt.scatter(y_true, y_pred, alpha=0.5)
+    plt.plot([y_true.min(), y_true.max()], [y_true.min(), y_true.max()], 'r--')
+    plt.xlabel("Actual Mood")
+    plt.ylabel("Predicted Mood")
+    plt.title(f"{title} - Scatter Plot")
+    #plt.show()
+    plt.close()
+    filename = f'data_analysis/plots/modeling/{title.lower().replace(" ", "_")}.png'
+    plt.savefig(filename)
+    
+    print("Figure saved to:", filename)
+    
+    return
+
+def plot_results_ts(y_true, y_pred, X, title="Time Series Predictions vs Actual"):
+    # Time series plot
+    df_plot = pd.DataFrame({
+        'date': pd.to_datetime(X['date']),
+        'y_true': y_true,
+        'y_pred': y_pred
     })
-    feature_importance = feature_importance.sort_values('importance', ascending=False)
-    
-    plt.figure(figsize=(10, 6))
-    sns.barplot(data=feature_importance, x='importance', y='feature')
-    plt.title("Feature Importance")
+    grouped = df_plot.groupby('date').mean().reset_index()
+
+    plt.figure(figsize=(14, 6))
+    plt.plot(grouped['date'], grouped['y_true'], label='Mean Actual Mood', marker='o')
+    plt.plot(grouped['date'], grouped['y_pred'], label='Mean Predicted Mood', marker='x')
+    plt.xlabel("Date")
+    plt.ylabel("Mood")
+    plt.title(title)
+    plt.legend()
     plt.tight_layout()
-    plt.savefig('data_analysis/plots/modeling/feature_importance_simple.png')
+    filename = f'data_analysis/plots/modeling/{title.lower().replace(" ", "_")}.png'
+    plt.savefig(filename)
+    #plt.show()
+    plt.close()
     plt.close()
     
-    print("\nFeature Importance:")
-    print(feature_importance)
-    
-    # Save model
-    model.save_model('models/xgboost_simple.model')
-    print("\nModel saved to 'models/xgboost_simple.model'")
+    print("Figure saved to:", filename)
 
 if __name__ == "__main__":
     main()
