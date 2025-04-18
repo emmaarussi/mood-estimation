@@ -168,6 +168,15 @@ def prepare_rolling_window_data(df, window_size=7):
                 'affect_angle_72h': current_row['affect_angle_72h'],
                 'affect_angle_168h': current_row['affect_angle_168h'],
                 
+                # Gap features
+                'avg_gap_hours': current_row['avg_gap_hours'],
+                'gap_std_hours': current_row['gap_std_hours'],
+                'max_gap_hours': current_row['max_gap_hours'],
+                'gap_category_normal': 1 if current_row['gap_category'] == 'normal' else 0,
+                'gap_category_12_24h': 1 if current_row['gap_category'] == '12-24h' else 0,
+                'gap_category_24_48h': 1 if current_row['gap_category'] == '24-48h' else 0,
+                'gap_category_48h_plus': 1 if current_row['gap_category'] == '48h+' else 0,
+                
                 # Other features
                 'time_since_last_mood': current_row['time_since_last_mood']
             }
