@@ -1,0 +1,88 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{enumitem}
+
+\title{Data Cleaning Process Documentation\\Mood Estimation Project}
+\author{Cascade AI}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+This document describes the comprehensive data cleaning process implemented for the mood estimation project. The process is designed to ensure data quality while preserving the integrity of temporal patterns in mood measurements and associated variables.
+
+\section{Data Cleaning Pipeline}
+The cleaning process consists of several sophisticated steps, each designed to address specific aspects of data quality.
+
+\section{Outlier Removal}
+The outlier removal process combines statistical and domain-based approaches:
+
+\subsection{Domain-based Validation}
+The process enforces strict variable-specific constraints:
+\begin{itemize}[noitemsep]
+\item Mood scores: Limited to scale [1, 10]
+\item Circumplex measures (arousal and valence): Bounded within [-2, 2]
+\item Activity indicators: Normalized to [0, 1]
+\item Screen time events: Capped at 7200 seconds (2 hours)
+\item Binary variables (calls, SMS): Restricted to \{0, 1\}
+\end{itemize}
+
+\subsection{Statistical Outlier Detection}
+For non-binary variables, the process employs the Interquartile Range (IQR) method with variable thresholds:
+\begin{itemize}[noitemsep]
+\item Standard psychological measures: 3 × IQR threshold
+\item Usage time variables: More permissive 5 × IQR threshold
+\item $Q_1 - k\times IQR \leq x \leq Q_3 + k\times IQR$, where $k$ is the variable-specific threshold
+\end{itemize}
+
+\section{Temporal Analysis}
+The process includes sophisticated temporal pattern analysis:
+
+\subsection{Gap Analysis}
+\begin{itemize}[noitemsep]
+\item Identification of temporal discontinuities
+\item Characterization of recording patterns
+\item Analysis of sampling intervals
+\item Time zone handling (conversion from UTC to Europe/Amsterdam)
+\end{itemize}
+
+\section{Structure Analysis}
+The cleaning pipeline includes comprehensive dataset structure analysis:
+
+\subsection{Balance Assessment}
+\begin{itemize}[noitemsep]
+\item User participation analysis
+\item Record distribution across users
+\item Temporal coverage evaluation
+\end{itemize}
+
+\subsection{Feature Analysis}
+For each variable:
+\begin{itemize}[noitemsep]
+\item Distribution statistics (mean, standard deviation)
+\item Missing value patterns
+\item Unique value counts
+\item Temporal characteristics
+\end{itemize}
+
+\section{Documentation}
+The process generates detailed documentation:
+\begin{itemize}[noitemsep]
+\item Comprehensive analysis reports in both text and markdown formats
+\item Logging of all cleaning operations
+\item Statistical summaries of removed outliers
+\item Data quality metrics
+\end{itemize}
+
+\section{Implementation Details}
+The cleaning process is implemented in Python, utilizing:
+\begin{itemize}[noitemsep]
+\item pandas for data manipulation
+\item numpy for numerical operations
+\item datetime utilities for temporal analysis
+\item logging framework for process tracking
+\end{itemize}
+
+\end{document}

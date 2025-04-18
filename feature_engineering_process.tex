@@ -1,0 +1,158 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\title{Feature Engineering Process Documentation}
+\author{Cascade AI}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Data Preparation and Leakage Prevention}
+
+\subsection{Data Format Transformation}
+\begin{itemize}[noitemsep]
+\item \textbf{Initial Format}: Long format with columns [id, time, variable, value]
+\item \textbf{Transformation}: Convert to wide format using \texttt{pivot\_long\_to\_wide}
+\item \textbf{Duplicate Handling}: 
+  \begin{itemize}[noitemsep]
+  \item Multiple measurements at same timestamp are averaged
+  \item Ensures one record per (id, time) combination
+  \item Prevents information leakage from future duplicate measurements
+  \end{itemize}
+\end{itemize}
+
+\subsection{Temporal Ordering}
+\begin{itemize}[noitemsep]
+\item \textbf{Strict Ordering}: Data is sorted by ['id', 'time'] before any feature creation
+\item \textbf{Purpose}: Ensures temporal causality in feature calculations
+\item \textbf{Impact}: Prevents accidental use of future data in rolling calculations
+\end{itemize}
+
+\subsection{Feature Creation Order}
+Features are created in a specific order to prevent data leakage:
+
+\subsubsection{Temporal Features (No leakage risk)}
+\begin{itemize}[noitemsep]
+\item hour, day\_of\_week, month, time\_of\_day
+\item Cyclical encoding: hour\_sin, hour\_cos, day\_sin, day\_cos
+\item These are point-in-time features with no temporal dependencies
+\end{itemize}
+
+\subsubsection{Lag Features (Leakage prevention critical)}
+\begin{itemize}[noitemsep]
+\item All calculations use \texttt{.shift(1)} to access only past data
+\item Rolling windows use \texttt{closed='left'} to exclude current observation
+\item Windows: 24h, 72h, 168h (1 day, 3 days, 1 week)
+\item Features:
+  \begin{itemize}[noitemsep]
+  \item \texttt{mood\_lag\_Xh}: Previous mood value
+  \item \texttt{mood\_rolling\_mean\_Xh}: Mean of past moods
+  \item \texttt{mood\_rolling\_std\_Xh}: Standard deviation of past moods
+  \end{itemize}
+\end{itemize}
+
+\subsubsection{Activity Features (Historical windows)}
+\begin{itemize}[noitemsep]
+\item All calculations use past data only via \texttt{closed='left'}
+\item Features calculated over 24h, 72h, 168h windows:
+  \begin{itemize}[noitemsep]
+  \item \texttt{activity\_intensity\_Xh}
+  \item \texttt{activity\_variability\_Xh}
+  \item \texttt{screen\_time\_Xh}
+  \end{itemize}
+\end{itemize}
+
+\subsubsection{Communication Features (Historical windows)}
+\begin{itemize}[noitemsep]
+\item Past-only calculations for call and SMS data
+\item Features over 24h, 72h, 168h windows:
+  \begin{itemize}[noitemsep]
+  \item \texttt{call\_frequency\_Xh}
+  \item \texttt{sms\_frequency\_Xh}
+  \item \texttt{total\_communication\_Xh}
+  \end{itemize}
+\end{itemize}
+
+\subsubsection{App Usage Features (Historical windows)}
+\begin{itemize}[noitemsep]
+\item Rolling calculations on past app usage data
+\item Features over 24h, 72h, 168h windows:
+  \begin{itemize}[noitemsep]
+  \item \texttt{productive\_ratio\_Xh}
+  \item \texttt{app\_diversity\_Xh}
+  \end{itemize}
+\end{itemize}
+
+\subsubsection{Circumplex Features (Historical windows)}
+\begin{itemize}[noitemsep]
+\item Calculations on past arousal and valence data
+\item Features over 24h, 72h, 168h windows:
+  \begin{itemize}[noitemsep]
+  \item \texttt{arousal\_std\_Xh}
+  \item \texttt{valence\_std\_Xh}
+  \item \texttt{affect\_intensity\_Xh}
+  \item \texttt{affect\_angle\_Xh}
+  \end{itemize}
+\end{itemize}
+
+\subsection{Gap Features (From Data Cleaning)}
+\begin{itemize}[noitemsep]
+\item Gap features from cleaned dataset are preserved:
+  \begin{itemize}[noitemsep]
+  \item gap\_category (normal, 12-24h, 24-48h, 48h+)
+  \item avg\_gap\_hours
+  \item gap\_std\_hours
+  \item max\_gap\_hours
+  \end{itemize}
+\end{itemize}
+
+\section{Key Data Leakage Prevention Techniques}
+
+\subsection{Shifting Operations}
+\begin{itemize}[noitemsep]
+\item Use of \texttt{.shift(1)} ensures we only access past values
+\item Example: \texttt{mood\_lag\_24h = mood.shift(1)}
+\end{itemize}
+
+\subsection{Rolling Windows}
+\begin{itemize}[noitemsep]
+\item All rolling operations use \texttt{closed='left'}
+\item Excludes current observation from calculations
+\item Example: \texttt{rolling(window=24, min\_periods=1, closed='left')}
+\end{itemize}
+
+\subsection{Temporal Ordering}
+\begin{itemize}[noitemsep]
+\item Strict sorting by time before any calculations
+\item Ensures temporal causality is maintained
+\end{itemize}
+
+\subsection{Window Boundaries}
+\begin{itemize}[noitemsep]
+\item All windowed calculations respect temporal boundaries
+\item No future data used in any rolling statistics
+\end{itemize}
+
+\subsection{Missing Value Handling}
+\begin{itemize}[noitemsep]
+\item Missing values filled with 0 only after all temporal features are created
+\item Prevents future information from influencing past predictions
+\end{itemize}
+
+\section{Feature Dependencies}
+
+Features are created in order of dependency to prevent leakage:
+\begin{enumerate}[noitemsep]
+\item Independent features (temporal) first
+\item Simple lag features second
+\item Complex rolling features last
+\end{enumerate}
+
+This ordering ensures that no feature accidentally incorporates information from the future or from the current prediction point.
+
+\end{document}
