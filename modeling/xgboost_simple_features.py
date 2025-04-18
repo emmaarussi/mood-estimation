@@ -58,14 +58,18 @@ def prepare_rolling_window_data(df, window_size=7):
                 'mood_mean': window['mood'].mean(),
                 'mood_std': window['mood'].std(),
                 'mood_trend': window['mood'].iloc[-1] - window['mood'].iloc[0],
-                'activity_mean': window['recent_activity'].mean(),
+                'mood_lag':window['mood'].iloc[-1],
+                'activity_roll_mean': window['recent_activity'].mean(),
                 'screen_time_mean': window['daily_screen_time'].mean(),
                 'communication_mean': window['communication_time'].mean(),
                 'arousal_mean': window['circumplex_arousal'].mean(),
+                'arousal_lag': window['circumplex_arousal'].iloc[-1],
                 'valence_mean': window['circumplex_valence'].mean(),
+                'valence_lag':window['circumplex_valence'].iloc[-1],
                 'emotion_mean': window['emotion_intensity'].mean(),
+                'emotion_lag':window['emotion_intensity'].iloc[-1],
                 'day_of_week': target_day['date'].dayofweek,
-                'is_weekend': target_day['date'].dayofweek >= 5
+                #'is_weekend': target_day['date'].dayofweek >= 5 not needed day of week already included
             }
             
             features.append(feature_dict)
@@ -155,30 +159,71 @@ def main(input_file=None):
     
     # Prepare features
     print("Preparing features...")
-    X, y, dates, user_ids = prepare_rolling_window_data(df)
+    X, y, dates, user_ids = prepare_rolling_window_data(df, window_size=5)
     dates = pd.to_datetime(dates)
     
+    full_data = pd.concat([X, pd.Series(y, name='target_outcome')],axis=1)
+    
+    train_list = []
+    val_list = []
+    test_list = []
+    
+    # Split data per user
+    for user, group in full_data.groupby('user_id'):
+        sorted_group = group.sort_values('date')
+        n = len(sorted_group)
+        
+        if n < 20:
+            continue
+        
+        train_end = int(n * 0.8)
+        val_end = int(n * 0.9)
+
+        train = sorted_group.iloc[:train_end]
+        val = sorted_group.iloc[train_end:val_end]
+        test = sorted_group.iloc[val_end:]
+
+        train_list.append(train)
+        val_list.append(val)
+        test_list.append(test)
+
+    train_data = pd.concat(train_list).reset_index(drop=True)
+    val_data = pd.concat(val_list).reset_index(drop=True)
+    test_data = pd.concat(test_list).reset_index(drop=True)
+    
     # Split data
-    train_mask = dates <= train_end
-    val_mask = (dates > train_end) & (dates <= val_end)
-    test_mask = dates > val_end
+    #train_mask = dates <= train_end
+    #val_mask = (dates > train_end) & (dates <= val_end)
+    #test_mask = dates > val_end
     
     # Recompute masks after filtering
-    train_mask = dates <= train_end
-    val_mask = (dates > train_end) & (dates <= val_end)
-    test_mask = dates > val_end
+    #train_mask = dates <= train_end
+    #val_mask = (dates > train_end) & (dates <= val_end)
+    #test_mask = dates > val_end
     
-    X_train, y_train = X[train_mask], y[train_mask]
-    X_val, y_val = X[val_mask], y[val_mask]
-    X_test, y_test = X[test_mask], y[test_mask]
+    X_train, y_train = train_data.drop('target_outcome', axis=1), train_data['target_outcome']
+    X_val, y_val = val_data.drop('target_outcome', axis=1), val_data['target_outcome']
+    X_test, y_test = test_data.drop('target_outcome', axis=1), test_data['target_outcome']
     
     # Train model
     print("Training model...")
+    #model = xgb.XGBRegressor(
+    #    n_estimators=100,
+    #    learning_rate=0.1,
+    #    max_depth=3,
+    #    objective='reg:squarederror'
+    #)
+    
     model = xgb.XGBRegressor(
-        n_estimators=100,
-        learning_rate=0.1,
-        max_depth=3,
-        objective='reg:squarederror'
+        n_estimators=200,
+        learning_rate=0.05,
+        max_depth=4,
+        min_child_weight=2,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        gamma=1,
+        objective='reg:squarederror',
+        random_state=42
     )
     
     eval_set = [(X_val.drop(['user_id', 'date'], axis=1), y_val)]
