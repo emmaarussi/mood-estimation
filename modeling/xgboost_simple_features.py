@@ -57,7 +57,7 @@ def plot_results(y_true, y_pred, dates, title="Predictions vs Actual"):
     plt.close()
 
 def prepare_rolling_window_data(df, window_size=7):
-    """Prepare data with rolling window features to predict next day's mean mood"""
+    """Prepare data with rolling window features to predict next day's mean mood using past week of data"""
     # Convert time to datetime
     df['time'] = pd.to_datetime(df['time'])
     
@@ -79,66 +79,77 @@ def prepare_rolling_window_data(df, window_size=7):
     for user in df['id'].unique():
         user_data = df[df['id'] == user].copy()
         
-        # Calculate daily mean moods
-        daily_moods = user_data.groupby('date')['mood'].mean().reset_index()
-        daily_moods = daily_moods.sort_values('date')
+        # Calculate daily statistics
+        daily_stats = user_data.groupby('date').agg({
+            'mood': ['mean', 'std', 'count'],
+            'activity_mean_24h': 'mean',
+            'screen_time_24h': 'sum',
+            'communication_24h': 'sum',
+            'emotion_intensity_24h': 'mean'
+        }).reset_index()
         
-        # For each day's last recording, predict next day's mean mood
-        for i in range(len(daily_moods) - 1):  # -1 to ensure we have next day's data
-            current_date = daily_moods.iloc[i]['date']
-            next_date = daily_moods.iloc[i+1]['date']
+        # Rename columns
+        daily_stats.columns = ['date', 'mood_mean', 'mood_std', 'n_measurements', 
+                             'activity_mean', 'screen_time', 'communication', 'emotion_intensity']
+        daily_stats = daily_stats.sort_values('date')
+        
+        # For each day, predict next day's mean mood
+        for i in range(window_size, len(daily_stats) - 1):  # Need window_size days of history
+            current_date = daily_stats.iloc[i]['date']
+            next_date = daily_stats.iloc[i + 1]['date']
             
             # Skip if gap is more than 1 day
             if (next_date - current_date).days > 1:
                 continue
             
-            # Get the last recording of the current day
-            current_day_data = user_data[user_data['date'] == current_date]
-            if len(current_day_data) == 0:
+            # Get the window of past 7 days
+            window_data = daily_stats.iloc[i-window_size+1:i+1]
+            
+            # Skip if we don't have enough days in the window
+            if len(window_data) < window_size:
                 continue
-                
-            current_row = current_day_data.iloc[-1]  # Use last recording of the day
-            next_day_mean_mood = daily_moods.iloc[i+1]['mood']  # Use mean mood of next day
-
-
-            # Extract time features
-            current_time = current_row['time']
-            feature_dict = {
+            
+            # Calculate weekly features
+            weekly_features = {
                 'id': user,
-                'time': current_time,
+                'time': pd.to_datetime(current_date),
+                
                 # Time features
-                'hour': current_time.hour,
-                'day_of_week': current_time.dayofweek,
-                'month': current_time.month,
-                'time_of_day': current_time.hour // 6,  # 0-3 representing 6-hour blocks
+                'day_of_week': pd.to_datetime(current_date).dayofweek,
+                'month': pd.to_datetime(current_date).month,
                 
-                # Mood features
-                'prev_mood': current_row['prev_mood'] if not pd.isna(current_row['prev_mood']) else 0,
-                'mood_std_24h': current_row['mood_std_24h'] if not pd.isna(current_row['mood_std_24h']) else 0,
-                'mood_trend': current_row['mood_trend'] if not pd.isna(current_row['mood_trend']) else 0,
-                'mood_vs_baseline': current_row['mood_vs_baseline'] if not pd.isna(current_row['mood_vs_baseline']) else 0,
+                # Weekly mood features
+                'mood_mean_7d': window_data['mood_mean'].mean(),
+                'mood_std_7d': window_data['mood_mean'].std(),
+                'mood_trend_7d': (window_data['mood_mean'].iloc[-1] - window_data['mood_mean'].iloc[0]) / window_size,
+                'mood_yesterday': window_data['mood_mean'].iloc[-1],
                 
-                # Activity features
-                'activity_mean_24h': current_row['activity_mean_24h'] if not pd.isna(current_row['activity_mean_24h']) else 0,
-                'activity_std_24h': current_row['activity_std_24h'] if not pd.isna(current_row['activity_std_24h']) else 0,
-                'screen_time_24h': current_row['screen_time_24h'] if not pd.isna(current_row['screen_time_24h']) else 0,
+                # Weekly activity features
+                'activity_mean_7d': window_data['activity_mean'].mean(),
+                'activity_std_7d': window_data['activity_mean'].std(),
+                'activity_trend_7d': (window_data['activity_mean'].iloc[-1] - window_data['activity_mean'].iloc[0]) / window_size,
                 
-                # Communication features
-                'communication_24h': current_row['communication_24h'] if not pd.isna(current_row['communication_24h']) else 0,
+                # Weekly screen time
+                'screen_time_7d': window_data['screen_time'].mean(),
+                'screen_time_std_7d': window_data['screen_time'].std(),
                 
-                # Emotion features
-                'emotion_intensity_24h': current_row['emotion_intensity_24h'] if not pd.isna(current_row['emotion_intensity_24h']) else 0,
+                # Weekly communication
+                'communication_7d': window_data['communication'].mean(),
+                'communication_std_7d': window_data['communication'].std(),
+                
+                # Weekly emotion
+                'emotion_intensity_7d': window_data['emotion_intensity'].mean(),
+                'emotion_intensity_std_7d': window_data['emotion_intensity'].std(),
                 
                 # Data quality
-                'measurements_24h': current_row['measurements_24h'] if not pd.isna(current_row['measurements_24h']) else 0,
-                
-                # User baseline
-                'user_avg_mood': current_row['user_avg_mood'] if not pd.isna(current_row['user_avg_mood']) else 0
+                'measurements_7d': window_data['n_measurements'].sum(),
+                'days_with_data': (window_data['n_measurements'] > 0).sum()
             }
+
             
-            features.append(feature_dict)
-            targets.append(next_day_mean_mood)  # Use next day's mean mood as target
-            dates.append(current_row['time'])
+            features.append(weekly_features)
+            targets.append(daily_stats.iloc[i + 1]['mood_mean'])  # Next day's mean mood
+            dates.append(pd.to_datetime(current_date))
             user_ids.append(user)
     
     X = pd.DataFrame(features)

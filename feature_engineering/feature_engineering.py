@@ -229,6 +229,7 @@ def prepare_features_for_modeling(df):
     features = create_app_usage_features(features)
     features = create_circumplex_features(features)
     
+    
     # Calculate time since last mood report using only past data
     features['time_since_last_mood'] = features.groupby('id')['time'].transform(
         lambda x: x.diff().dt.total_seconds() / 3600
