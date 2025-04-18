@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import xgboost as xgb
 from sklearn.metrics import r2_score, mean_squared_error
-from sklearn.model_selection import GridSearchCV, GroupKFold
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime, timedelta
@@ -125,27 +125,26 @@ def main(input_file=None):
     xgb_base = xgb.XGBRegressor(objective='reg:squarederror', random_state=42)
 
     # Define the GroupKFold cross-validator
-    n_splits_cv = 3 # Or 3, depending on data size and computation time
-    group_kfold = GroupKFold(n_splits=n_splits_cv)
+    n_splits_cv = 3  # Or more, depending on data size
+    time_split = TimeSeriesSplit(n_splits=n_splits_cv)
 
-    # Get the user IDs corresponding to the training data rows
-    groups = X_train['user_id']
+    # Sort X_train and y_train by date to ensure correct temporal order
+    train_sorted = X_train.sort_values('date').reset_index(drop=True)
+    y_train_sorted = y_train.loc[train_sorted.index]
 
     grid_search = GridSearchCV(
         estimator=xgb_base,
         param_grid=param_grid,
         scoring='neg_root_mean_squared_error',
-        cv=group_kfold, # Use GroupKFold here
+        cv=time_split,  # Use TimeSeriesSplit here
         verbose=0,
         n_jobs=-1
     )
 
-    print(f"Performing {n_splits_cv}-Fold Group Cross-Validation for Tuning...")
-    # Pass the groups to the fit method
+    print(f"Performing {n_splits_cv}-Fold TimeSeriesSplit Cross-Validation for Tuning...")
     grid_search.fit(
-        X_train.drop(['user_id', 'date'], axis=1), # Features only
-        y_train,                                   # Target
-        groups=groups                              # User IDs for grouping folds
+        train_sorted.drop(['user_id', 'date'], axis=1),  # Features only
+        y_train_sorted                                   # Target
     )
 
     print(f"\nBest parameters found: {grid_search.best_params_}")
@@ -262,6 +261,7 @@ def plot_results_ts(y_true, y_pred, X, title="Time Series Predictions vs Actual"
     plt.close()
     
     print("Figure saved to:", filename)
+
 
 if __name__ == "__main__":
     main()

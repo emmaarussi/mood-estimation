@@ -3,7 +3,7 @@ import numpy as np
 import xgboost as xgb
 from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-from sklearn.model_selection import GridSearchCV, GroupKFold
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 import matplotlib.pyplot as plt
 import sys
 import seaborn as sns
@@ -57,7 +57,7 @@ def main(input_file=None):
     X_val,   y_val   = val_df.drop('target', axis=1),   val_df['target']
     X_test,  y_test  = test_df.drop('target', axis=1),  test_df['target']
     
-    # h
+    # Set up classes
     n_classes = len(np.unique(y_train))
     if n_classes < 2:
         raise ValueError(f"Not enough classes in training set: found {n_classes}.")
@@ -103,29 +103,39 @@ def main(input_file=None):
         'colsample_bytree': [0.7, 0.9],
         'gamma':            [0, 0.2, 0.5],
     }
-    base = XGBClassifier(
+    
+    xgb_base = XGBClassifier(
         objective=objective,
         eval_metric=eval_metric,
         num_class=n_classes if n_classes > 2 else None,
         random_state=42
     )
-    gkf = GroupKFold(n_splits=3)
-    grid = GridSearchCV(
-        estimator=base,
+    # Define the GroupKFold cross-validator
+    n_splits_cv = 3  # Or more, depending on data size
+    time_split = TimeSeriesSplit(n_splits=n_splits_cv)
+
+    # Sort X_train and y_train by date to ensure correct temporal order
+    train_sorted = X_train.sort_values('date').reset_index(drop=True)
+    y_train_sorted = y_train.loc[train_sorted.index]
+
+    grid_search = GridSearchCV(
+        estimator=xgb_base,
         param_grid=param_grid,
-        scoring='neg_log_loss',
-        cv=gkf,
+        scoring='f1_weighted',
+        cv=time_split,  # Use TimeSeriesSplit here
         verbose=0,
         n_jobs=-1
     )
-    grid.fit(
-        X_train.drop(['user_id','date'], axis=1), y_train,
-        groups=X_train['user_id']
-    )
-    print("Best params:", grid.best_params_)
-    print("Best CV acc:", grid.best_score_)
 
-    best = grid.best_estimator_
+    print(f"Performing {n_splits_cv}-Fold TimeSeriesSplit Cross-Validation for Tuning...")
+    grid_search.fit(
+        train_sorted.drop(['user_id', 'date'], axis=1),  # Features only
+        y_train_sorted                                   # Target
+    )
+    print("Best params:", grid_search.best_params_)
+    print("Best CV acc:", grid_search.best_score_)
+
+    best = grid_search.best_estimator_
     best.save_model('models/xgb_classifier_tuned.model')
     print("Tuned model saved.")
     evaluate_and_plot(
@@ -142,7 +152,7 @@ def evaluate_and_plot(model, X_train, y_train, X_val, y_val, X_test, y_test, enc
         preds = model.predict(Xf)
         acc = accuracy_score(y, preds)
         print(f"{label} {split} Accuracy: {acc:.4f}")
-        print(classification_report(y, preds, target_names=encoder.classes_))
+        print(classification_report(y, preds, target_names=encoder.classes_, zero_division=0))
         cm = confusion_matrix(y, preds)
         plt.figure(figsize=(6,6))
         sns.heatmap(cm, annot=True, fmt='d',
