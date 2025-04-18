@@ -191,8 +191,16 @@ def create_circumplex_features(df, window_sizes=[24, 72, 168]):
     return features
 
 def pivot_long_to_wide(df):
-    """Convert data from long to wide format, handling duplicates by taking the mean"""
-    # First, sort by time to ensure correct ordering
+    """Convert data from long to wide format, handling duplicates by taking the mean
+    while preserving gap features"""
+    # First, save gap features which are not in variable-value format
+    gap_features = ['time_since_last', 'hours_since_last', 'gap_category',
+                    'avg_gap_hours', 'gap_std_hours', 'max_gap_hours']
+    
+    # Get the first occurrence of gap features for each (id, time) combination
+    gap_data = df.groupby(['id', 'time'])[gap_features].first().reset_index()
+    
+    # Sort by time to ensure correct ordering
     df = df.sort_values(['id', 'time'])
     
     # Handle duplicates by taking the mean for each combination of id, time, and variable
@@ -203,6 +211,9 @@ def pivot_long_to_wide(df):
     
     # Rename columns to avoid dots in column names
     wide_df.columns = [col.replace('.', '_') for col in wide_df.columns]
+    
+    # Merge back the gap features
+    wide_df = wide_df.merge(gap_data, on=['id', 'time'], how='left')
     
     return wide_df
 
