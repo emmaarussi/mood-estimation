@@ -5,6 +5,8 @@ from sklearn.preprocessing import LabelEncoder
 import pandas as pd
 from pathlib import Path
 
+window_length = 4
+
 def feature_engineering_pipeline(window_length=3):
     # Main function!
     
@@ -84,6 +86,29 @@ def get_daily_data(df):
     # This is not an issue because we delete this entry anyway
     # daily_df[(~daily_df['circumplex_arousal'].isna() & daily_df['mood'].isna())]
     
+    daily = daily.sort_values(by=['id', 'date'])
+    
+    daily['date'] = pd.to_datetime(daily['date'])
+
+    # Get the mood from the next row within each group
+    daily['next_day_mood'] = daily.groupby('id')['mood'].shift(-1)
+
+    # Get the date from the next row within each group
+    daily['next_day_date'] = daily.groupby('id')['date'].shift(-1)
+
+    # Calculate the difference in days between the current date and the next available date
+    daily['date_diff'] = (daily['next_day_date'] - daily['date']).dt.days
+
+    # Assign target_mood only if the next available date is exactly one day later
+    daily['target_mood'] = np.where(
+        daily['date_diff'] == 1,  # Condition: Is the next row exactly 1 day later?
+        daily['next_day_mood'],   # Value if True: Use the mood from the next row
+        pd.NA                       # Value if False: Assign NA (or np.nan)
+    )
+
+    # Drop temporary columns and rows where target_mood is NA
+    daily = daily.drop(columns=['next_day_mood', 'next_day_date', 'date_diff'])
+    
     return daily
 
 def create_basic_features(daily_df: pd.DataFrame):
@@ -103,8 +128,14 @@ def create_basic_features(daily_df: pd.DataFrame):
     df['productivity_work'] = df[productivity_work_columns].sum(axis=1)
     df['miscellaneous'] = df[miscellaneous_columns].sum(axis=1)
     
+    df['day_of_week'] = df['date'].dt.weekday
+    df['is_weekend'] = df['day_of_week'] >= 5
+    
     # Emotion intensity feature
     df['emotion_intensity'] = np.sqrt(df['circumplex_arousal']**2 + df['circumplex_valence']**2)
+    
+    # Add mood missing feature
+    df["mood_missing"] = df["mood"].isna().astype(int)
     
     features_to_drop = (social_columns + entertainment_leisure_columns 
                         + productivity_work_columns + miscellaneous_columns)
@@ -122,7 +153,7 @@ def add_rolling_window_features(df: pd.DataFrame,window_length=3):
         group = group.sort_values('date')
         group = group.set_index('date')
         for col in columns:
-            group[f'{col}_rolling_3d'] = group[col].rolling(window).mean()
+            group[f'{col}_rolling_{window_length}d'] = group[col].rolling(window).mean()
         return group.reset_index()
 
     # Define features for rolling window
@@ -139,42 +170,35 @@ def add_rolling_window_features(df: pd.DataFrame,window_length=3):
     )
     
     # Impute Missing Rolling Features
+     # Impute Missing Rolling Features
     rolling_cols = [f'{col}_rolling_{window_length}d' for col in calendar_rolling_features_list]
+    # Get original column names corresponding to rolling columns
+    original_cols_map = {f'{col}_rolling_{window_length}d': col for col in calendar_rolling_features_list}
+
     for col in rolling_cols:
         if col in rolled_df.columns:
-            # Fill NaN with the mean *for that user*
+            original_col = original_cols_map[col] # Find the original feature name
+
+            # 1. Fill initial NaNs using the user's mean of the *available rolling values*
             rolled_df[col] = rolled_df.groupby('id')[col].transform(lambda x: x.fillna(x.mean()))
-            # If a user has ALL NaNs for a feature (e.g., very short history), fill with global mean or 0
+
+            # 2. Fill remaining NaNs (users with NO rolling values) using the user's mean of the *original feature*
+            # Check if there are still NaNs after the first transform
             if rolled_df[col].isnull().any():
-                 rolled_df[col] = rolled_df[col].fillna(rolled_df[col].mean())
+                 # Calculate the user-specific mean of the ORIGINAL column
+                 user_mean_original = rolled_df.groupby('id')[original_col].transform('mean')
+                 # Fill NaNs in the ROLLING column with the user's mean from the ORIGINAL column
+                 rolled_df[col] = rolled_df[col].fillna(user_mean_original)
 
-    rolled_df = rolled_df.sort_values(by=['id', 'date'])
-
-    # Get the mood from the next row within each group
-    rolled_df['next_day_mood'] = rolled_df.groupby('id')['mood'].shift(-1)
-
-    # Get the date from the next row within each group
-    rolled_df['next_day_date'] = rolled_df.groupby('id')['date'].shift(-1)
-
-    # Calculate the difference in days between the current date and the next available date
-    rolled_df['date_diff'] = (rolled_df['next_day_date'] - rolled_df['date']).dt.days
-
-    # Assign target_mood only if the next available date is exactly one day later
-    rolled_df['target_mood'] = np.where(
-        rolled_df['date_diff'] == 1,  # Condition: Is the next row exactly 1 day later?
-        rolled_df['next_day_mood'],   # Value if True: Use the mood from the next row
-        pd.NA                       # Value if False: Assign NA (or np.nan)
-    )
-
-    # Drop temporary columns and rows where target_mood is NA
-    rolled_df = rolled_df.drop(columns=['next_day_mood', 'next_day_date', 'date_diff'])
-    rolled_df = rolled_df.dropna(subset=['target_mood'])
-    
-    # Add mood missing feature
-    rolled_df["mood_missing"] = rolled_df["mood"].isna().astype(int)
+            # 3. Final Fallback (Optional but recommended): Fill any remaining NaNs (e.g., user has no data for original feature either)
+            #    You could use 0 or the global mean of the *original* feature. Using 0 is often simple.
+            if rolled_df[col].isnull().any():
+                 rolled_df[col] = rolled_df[col].fillna(0)
     
     # Drop old columns
     rolled_df = rolled_df.drop([x for x in calendar_rolling_features_list if x != 'mood'], axis=1)
+    
+    rolled_df = rolled_df.dropna(subset=['target_mood'])
     
     print("Basic feature creation complete!")
     
@@ -252,4 +276,4 @@ def prepare_rolling_window_data(daily, window_size=7, categorical=False):
     return X, y, dates, user_ids, encoder
 
 if __name__ == "__main__":
-    feature_engineering_pipeline(window_length=3)
+    feature_engineering_pipeline(window_length=window_length)
