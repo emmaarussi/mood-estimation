@@ -2,85 +2,183 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from sklearn.preprocessing import LabelEncoder
+import pandas as pd
+from pathlib import Path
 
-def create_basic_features(df):
+def feature_engineering_pipeline(window_length=3):
+    # Main function!
+    
+    output_path = Path('data')
+    input_file = 'data/dataset_mood_smartphone_cleaned.csv'
+    
+    # Input
+    df = pd.read_csv(input_file)
+    
+    # Generate DataFrames 
+    daily_df = get_daily_data(df)
+    basic_feature_df = create_basic_features(daily_df)
+    rolling_window_df = add_rolling_window_features(basic_feature_df, window_length=window_length)
+    
+    daily_df_base = output_path / 'daily_data'
+    basic_features_base = output_path / 'basic_features'
+    rolling_features_base = output_path / f'rolling_features_{window_length}d'
+    
+    # Save daily_df
+    daily_df.to_csv(f"{daily_df_base}.csv", index=False)
+    daily_df.to_parquet(f"{daily_df_base}.parquet", index=False)
+    print(f"  Saved daily data to {daily_df_base}.csv/.parquet")
+
+    # Save basic_feature_df
+    basic_feature_df.to_csv(f"{basic_features_base}.csv", index=False)
+    basic_feature_df.to_parquet(f"{basic_features_base}.parquet", index=False)
+    print(f"  Saved basic features to {basic_features_base}.csv/.parquet")
+
+    # Save rolling_window_df
+    rolling_window_df.to_csv(f"{rolling_features_base}.csv", index=False)
+    rolling_window_df.to_parquet(f"{rolling_features_base}.parquet", index=False)
+    print(f"  Saved rolling window features to {rolling_features_base}.csv/.parquet")
+    
+def get_daily_data(df):
+    
+    # Add date columns
+    df['time'] = pd.to_datetime(df['time'], format='mixed')
+    df['date'] = df['time'].dt.date
+    
+    # First convert to wide format - handle duplicates by taking mean
+    df = df.groupby(['id', 'time', 'variable'])['value'].mean().reset_index()
+    df = df.pivot(index=['id', 'time'], columns='variable', values='value').reset_index()
+    
+    # Rename Columns
+    df.columns = [col.replace('.', '_') for col in df.columns]
+    
+    df['date'] = df['time'].dt.date
+    
+    # Create daily aggregates
+    daily = df.groupby(['id', 'date']).agg({
+        'activity': 'mean',
+        'appCat_builtin': 'sum',
+        'appCat_communication': 'sum',
+        'appCat_entertainment': 'sum',
+        'appCat_finance': 'sum',
+        'appCat_game': 'sum',
+        'appCat_office': 'sum',
+        'appCat_other': 'sum',
+        'appCat_social': 'sum',
+        'appCat_travel': 'sum',
+        'appCat_unknown': 'sum',
+        'appCat_utilities': 'sum',
+        'appCat_weather': 'sum',
+        'call': 'sum',
+        'circumplex_arousal': 'mean',
+        'circumplex_valence': 'mean',
+        'mood': 'mean',
+        'screen':'sum',
+        'sms':'sum'
+    }).reset_index()
+    
+    # Fill missing activity with zero
+    daily.fillna({'activity':0})
+    
+    # NOTE: all missing values between circumplex and mood are common
+    # Only one observation has missing mood, but non-missing circumplex
+    # This is not an issue because we delete this entry anyway
+    # daily_df[(~daily_df['circumplex_arousal'].isna() & daily_df['mood'].isna())]
+    
+    return daily
+
+def create_basic_features(daily_df: pd.DataFrame):
     """Create a simple set of features for initial analysis"""
     print("Creating basic features...")
     
-    # First convert to wide format - handle duplicates by taking mean
-    features = df.groupby(['id', 'time', 'variable'])['value'].mean().reset_index()
-    features = features.pivot(index=['id', 'time'], columns='variable', values='value').reset_index()
-    features.columns = [col.replace('.', '_') for col in features.columns]
+    df = daily_df.copy()
     
-    # Filter for timestamps where we have mood recordings
-    print(f"Initial shape: {features.shape}")
-    features = features.dropna(subset=['mood'])
-    print(f"Shape after filtering for mood recordings: {features.shape}")
+    # Create aggregated app usage features
+    social_columns = ['appCat_communication', 'appCat_social', 'appCat_builtin']
+    entertainment_leisure_columns = ['appCat_entertainment', 'appCat_game', 'appCat_travel', 'appCat_weather']
+    productivity_work_columns =  ['appCat_office', 'appCat_finance', 'appCat_utilities']
+    miscellaneous_columns = ['appCat_other', 'appCat_unknown']
     
-    # 1. Time Features
-    features['hour'] = pd.to_datetime(features['time']).dt.hour
-    features['is_weekend'] = pd.to_datetime(features['time']).dt.dayofweek.isin([5, 6]).astype(int)
+    df['social_communication'] = df[social_columns].sum(axis=1)
+    df['entertainment_leisure'] = df[entertainment_leisure_columns].sum(axis=1)
+    df['productivity_work'] = df[productivity_work_columns].sum(axis=1)
+    df['miscellaneous'] = df[miscellaneous_columns].sum(axis=1)
     
-    # 2. Recent History (last 24h)
-    features = features.sort_values(['id', 'time'])
-    features['prev_mood'] = features.groupby('id')['mood'].shift(1)
-    features['mood_change'] = features['mood'] - features['prev_mood']
+    # Emotion intensity feature
+    df['emotion_intensity'] = np.sqrt(df['circumplex_arousal']**2 + df['circumplex_valence']**2)
     
-    # 3. Activity Level
-    if 'activity' in features.columns:
-        features['recent_activity'] = features.groupby('id')['activity'].transform(
-            lambda x: x.rolling(window=24, min_periods=1).mean()
-        )
-    else:
-        features['recent_activity'] = 0
-        
-    # 4. Screen Time
-    if 'screen' in features.columns:
-        features['daily_screen_time'] = features.groupby('id')['screen'].transform(
-            lambda x: x.rolling(window=24, min_periods=1).sum()
-        )
-    else:
-        features['daily_screen_time'] = 0
+    features_to_drop = (social_columns + entertainment_leisure_columns 
+                        + productivity_work_columns + miscellaneous_columns)
     
-    # 5. Communication
-    # Combine all communication apps
-    comm_cols = [col for col in features.columns if 'communication' in col.lower()]
-    features['communication_time'] = features[comm_cols].sum(axis=1) if comm_cols else 0
+    df = df.drop(features_to_drop, axis = 1)
     
-    # 6. Basic Circumplex
-    if 'circumplex_arousal' in features.columns and 'circumplex_valence' in features.columns:
-        features['emotion_intensity'] = np.sqrt(
-            features['circumplex_arousal']**2 + features['circumplex_valence']**2
-        )
-    else:
-        features['emotion_intensity'] = 0
+    return df
     
-    # 7. User baseline
-    features['user_avg_mood'] = features.groupby('id')['mood'].transform('mean')
-    features['mood_vs_average'] = features['mood'] - features['user_avg_mood']
+def add_rolling_window_features(df: pd.DataFrame,window_length=3):
+    # window_length in days
+    
+    # Create Rolling window
+    def calendar_rolling_features(group, columns, window=f"{window_length}D"):
+        group['date'] = pd.to_datetime(group['date'])
+        group = group.sort_values('date')
+        group = group.set_index('date')
+        for col in columns:
+            group[f'{col}_rolling_3d'] = group[col].rolling(window).mean()
+        return group.reset_index()
+
+    # Define features for rolling window
+    calendar_rolling_features_list = [
+        'activity', 'call', 'sms', 'screen', 'mood',
+        'social_communication', 'entertainment_leisure', 'productivity_work',
+        'miscellaneous', 'circumplex_arousal', 'circumplex_valence', 'emotion_intensity'
+    ]
+
+    # Apply the function per user
+    rolled_df = df.groupby('id', group_keys=False).apply(
+        calendar_rolling_features,
+        columns=calendar_rolling_features_list
+    )
+    
+    # Impute Missing Rolling Features
+    rolling_cols = [f'{col}_rolling_{window_length}d' for col in calendar_rolling_features_list]
+    for col in rolling_cols:
+        if col in rolled_df.columns:
+            # Fill NaN with the mean *for that user*
+            rolled_df[col] = rolled_df.groupby('id')[col].transform(lambda x: x.fillna(x.mean()))
+            # If a user has ALL NaNs for a feature (e.g., very short history), fill with global mean or 0
+            if rolled_df[col].isnull().any():
+                 rolled_df[col] = rolled_df[col].fillna(rolled_df[col].mean())
+
+    rolled_df = rolled_df.sort_values(by=['id', 'date'])
+
+    # Get the mood from the next row within each group
+    rolled_df['next_day_mood'] = rolled_df.groupby('id')['mood'].shift(-1)
+
+    # Get the date from the next row within each group
+    rolled_df['next_day_date'] = rolled_df.groupby('id')['date'].shift(-1)
+
+    # Calculate the difference in days between the current date and the next available date
+    rolled_df['date_diff'] = (rolled_df['next_day_date'] - rolled_df['date']).dt.days
+
+    # Assign target_mood only if the next available date is exactly one day later
+    rolled_df['target_mood'] = np.where(
+        rolled_df['date_diff'] == 1,  # Condition: Is the next row exactly 1 day later?
+        rolled_df['next_day_mood'],   # Value if True: Use the mood from the next row
+        pd.NA                       # Value if False: Assign NA (or np.nan)
+    )
+
+    # Drop temporary columns and rows where target_mood is NA
+    rolled_df = rolled_df.drop(columns=['next_day_mood', 'next_day_date', 'date_diff'])
+    rolled_df = rolled_df.dropna(subset=['target_mood'])
+    
+    # Add mood missing feature
+    rolled_df["mood_missing"] = rolled_df["mood"].isna().astype(int)
+    
+    # Drop old columns
+    rolled_df = rolled_df.drop([x for x in calendar_rolling_features_list if x != 'mood'], axis=1)
     
     print("Basic feature creation complete!")
-    return features
-
-def get_daily_data(df):
-    # Sort by user and time
-    df = df.sort_values(['id', 'time'])
     
-    # Create daily aggregates
-    daily = df.groupby(['id', df['time'].dt.date]).agg({
-        'mood': 'mean',
-        'recent_activity': 'mean',
-        'daily_screen_time': 'sum',
-        'communication_time': 'sum',
-        'circumplex_arousal': 'mean',
-        'circumplex_valence': 'mean',
-        'emotion_intensity': 'mean',
-        'hour': lambda x: len(x),  # number of measurements
-    }).reset_index()
-    daily.columns = ['id', 'date'] + list(daily.columns[2:])
-    daily['date'] = pd.to_datetime(daily['date'])
-    
-    return daily
+    return rolled_df
 
 def prepare_rolling_window_data(daily, window_size=7, categorical=False):
     """Prepare data with rolling window features"""
@@ -131,9 +229,6 @@ def prepare_rolling_window_data(daily, window_size=7, categorical=False):
     
     X = pd.DataFrame(features)
     y = np.array(targets)
-    
-    X = pd.DataFrame(features)
-    y = np.array(targets)
     encoder = None
 
     if categorical:
@@ -157,56 +252,4 @@ def prepare_rolling_window_data(daily, window_size=7, categorical=False):
     return X, y, dates, user_ids, encoder
 
 if __name__ == "__main__":
-    import sys
-    import os
-    
-    daily_df_output_file = "data/mood_prediction_simple_features_daily.csv"
-
-    # Get input and output paths
-    if len(sys.argv) > 1:
-        input_file = sys.argv[1]
-    else:
-        input_file = 'data/dataset_mood_smartphone_cleaned.csv'
-
-    if len(sys.argv) > 2:
-        output_file = sys.argv[2]
-    else:
-        output_file = 'data/mood_prediction_simple_features.csv'
-
-    # Ensure input file exists
-    if not os.path.exists(input_file):
-        print(f"Error: Input file not found: {input_file}")
-        sys.exit(1)
-
-    # Create output directory if it doesn't exist
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
-
-    # Load the cleaned data
-    print(f"Loading data from {input_file}...")
-    df = pd.read_csv(input_file)
-    df['time'] = pd.to_datetime(df['time'], format='mixed')
-    df['date'] = df['time'].dt.date
-    
-    # Create basic features
-    features = create_basic_features(df)
-    
-    daily_df = get_daily_data(features)
-    
-    # Save features
-    print(f"Saving features to {output_file}...")
-    
-    # Saving to parquet, perserved types
-    features.to_csv(output_file, index=False)
-    features.to_parquet(output_file.replace('csv','parquet'), index=False)
-    daily_df.to_parquet(daily_df_output_file.replace('csv','parquet'), index=False)
-    daily_df.to_csv(daily_df_output_file, index=False)
-    print("\nFeature Summary:")
-    print(f"Total features: {len(features.columns)}")
-    print("\nBasic features created:")
-    print("1. Time: hour, is_weekend")
-    print("2. History: prev_mood, mood_change")
-    print("3. Activity: recent_activity")
-    print("4. Phone: daily_screen_time")
-    print("5. Social: communication_time")
-    print("6. Emotion: emotion_intensity")
-    print("7. Personal: user_avg_mood, mood_vs_average")
+    feature_engineering_pipeline(window_length=3)
