@@ -62,8 +62,7 @@ def create_basic_features(df):
     print("Basic feature creation complete!")
     return features
 
-def prepare_rolling_window_data(df, window_size=7, categorical=False):
-    """Prepare data with rolling window features"""
+def get_daily_data(df):
     # Sort by user and time
     df = df.sort_values(['id', 'time'])
     
@@ -80,6 +79,11 @@ def prepare_rolling_window_data(df, window_size=7, categorical=False):
     }).reset_index()
     daily.columns = ['id', 'date'] + list(daily.columns[2:])
     daily['date'] = pd.to_datetime(daily['date'])
+    
+    return daily
+
+def prepare_rolling_window_data(daily, window_size=7, categorical=False):
+    """Prepare data with rolling window features"""
     
     # Create features from rolling windows
     features = []
@@ -155,6 +159,8 @@ def prepare_rolling_window_data(df, window_size=7, categorical=False):
 if __name__ == "__main__":
     import sys
     import os
+    
+    daily_df_output_file = "data/mood_prediction_simple_features_daily.csv"
 
     # Get input and output paths
     if len(sys.argv) > 1:
@@ -179,13 +185,21 @@ if __name__ == "__main__":
     print(f"Loading data from {input_file}...")
     df = pd.read_csv(input_file)
     df['time'] = pd.to_datetime(df['time'], format='mixed')
+    df['date'] = df['time'].dt.date
     
     # Create basic features
     features = create_basic_features(df)
     
+    daily_df = get_daily_data(features)
+    
     # Save features
     print(f"Saving features to {output_file}...")
+    
+    # Saving to parquet, perserved types
     features.to_csv(output_file, index=False)
+    features.to_parquet(output_file.replace('csv','parquet'), index=False)
+    daily_df.to_parquet(daily_df_output_file.replace('csv','parquet'), index=False)
+    daily_df.to_csv(daily_df_output_file, index=False)
     print("\nFeature Summary:")
     print(f"Total features: {len(features.columns)}")
     print("\nBasic features created:")
