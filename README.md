@@ -47,15 +47,68 @@ mood-estimation/
 
 ## Model Performance
 
-### Simple Features Model
-- Training R²: 0.576, RMSE: 0.452
-- Validation R²: 0.149, RMSE: 0.555
-- Test R²: 0.034, RMSE: 0.636
+\begin{table}[h]
+\centering
+\scriptsize  % smaller font to make the table more compact
+\setlength{\tabcolsep}{5pt}  % slightly narrower columns
+\renewcommand{\arraystretch}{1.15}  % slightly tighter row spacing
+\caption{Performance of the XGBoost Model}
+\label{tab:tuned_model_performance}
+\begin{tabular}{llccc}
+\toprule
+\textbf{Split} & \textbf{Class} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} \\
+\midrule
+Train & High & 0.83 & 0.97 & 0.89 \\
+      & Low  & 0.82 & 0.67 & 0.74 \\
+\textbf{Train Accuracy} & & \multicolumn{3}{r}{0.8263} \\
+\midrule
+Val & High  & 0.81 & 0.92 & 0.86 \\
+    & Low   & 0.73 & 0.51 & 0.60 \\
+\textbf{Val Accuracy} & & \multicolumn{3}{r}{0.7981} \\
+\midrule
+Test & High & 0.91 & 0.97 & 0.94 \\
+     & Low  & 0.89 & 0.72 & 0.80 \\
+\textbf{Test Accuracy} & & \multicolumn{3}{r}{0.8957} \\
+\bottomrule
+\end{tabular}
+\parbox{0.9\linewidth}{
+\footnotesize
+\textit{Note:} Scores are reported per class, with macro-averaged F1-scores and overall accuracy shown for each split. The tuned model performs strongly across splits and classes.}
+\end{table}
 
-### Complex Features Model
-- Training R²: 0.991, RMSE: 0.095
-- Validation R²: 0.996, RMSE: 0.037
-- Test R²: 0.992, RMSE: 0.068
+\vspace{-2.5em}
+\begin{table}[h]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.15}
+\caption{Performance of the LSTM Model}
+\label{tab:tuned_rnn_performance}
+\begin{tabular}{llccc}
+\toprule
+\textbf{Split} & \textbf{Class} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} \\
+\midrule
+Train & High & 0.82 & 0.95 & 0.88 \\
+      & Low  & 0.82 & 0.94 & 0.88 \\
+\textbf{Train Accuracy} & & \multicolumn{3}{r}{0.8777} \\
+\midrule
+Val & High  & 0.88 & 0.96 & 0.92 \\
+    & Low   & 0.88 & 0.98 & 0.92 \\
+\textbf{Val Accuracy} & & \multicolumn{3}{r}{0.9236} \\
+\midrule
+Test & High & 0.80 & 0.95 & 0.87 \\
+     & Low  & 0.80 & 0.95 & 0.87 \\
+\textbf{Test Accuracy} & & \multicolumn{3}{r}{0.8651} \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.5em}
+\parbox{0.9\linewidth}{
+\footnotesize
+\textit{Note:} Scores are reported per class, with macro-averaged F1-scores and overall accuracy shown for each split.
+}
+\end{table}
+
 
 ## Setup
 
