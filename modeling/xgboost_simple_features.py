@@ -1,213 +1,117 @@
 import pandas as pd
 import numpy as np
 import xgboost as xgb
-from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime, timedelta
+import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-def smape(y_true, y_pred):
-    """Symmetric Mean Absolute Percentage Error"""
-    return 100 * np.mean(np.abs(y_pred - y_true) / ((np.abs(y_true) + np.abs(y_pred)) / 2))
+from modeling.metrics import evaluate_model_pipeline
+from feature_engineering.simple_feature_engineering import prepare_rolling_window_data
 
-def wmape(y_true, y_pred):
-    """Weighted Mean Absolute Percentage Error"""
-    return np.sum(np.abs(y_true - y_pred)) / np.sum(np.abs(y_true)) * 100
+def split_user_data(user_df, train_frac=0.6, val_frac=0.2):
+    user_df = user_df.sort_values("date").reset_index(drop=True)
+    n = len(user_df)
+    train_end = int(n * train_frac)
+    val_end   = int(n * (train_frac + val_frac))
+    user_df["split"] = "test"
+    user_df.loc[:train_end-1, "split"] = "train"
+    user_df.loc[train_end:val_end-1, "split"] = "val"
+    return user_df
 
-def prepare_rolling_window_data(df, window_size=7):
-    """Prepare data with rolling window features"""
-    # Sort by user and time
-    df = df.sort_values(['id', 'time'])
+def main(input_file=None):
     
-    # Create daily aggregates
-    daily = df.groupby(['id', df['time'].dt.date]).agg({
-        'mood': 'mean',
-        'recent_activity': 'mean',
-        'daily_screen_time': 'sum',
-        'communication_time': 'sum',
-        'circumplex_arousal': 'mean',
-        'circumplex_valence': 'mean',
-        'emotion_intensity': 'mean',
-        'hour': lambda x: len(x),  # number of measurements
-    }).reset_index()
-    daily.columns = ['id', 'date'] + list(daily.columns[2:])
-    daily['date'] = pd.to_datetime(daily['date'])
+    # Data loading
+    input_file = 'data/rolling_features_4d.parquet' # NOTE: model worked best when using rolling window of length 4
+    df = pd.read_parquet(input_file)
     
-    # Create features from rolling windows
-    features = []
-    targets = []
-    dates = []
-    user_ids = []
+    # Split user data
+    df = df.groupby("id", group_keys=False).apply(split_user_data)
     
-    for user in daily['id'].unique():
-        user_data = daily[daily['id'] == user].copy()
-        
-        for i in range(len(user_data) - window_size):
-            window = user_data.iloc[i:i+window_size]
-            target_day = user_data.iloc[i+window_size]
-            
-            # Skip if gap is more than 1 day
-            if (target_day['date'] - window['date'].iloc[-1]).days > 1:
-                continue
-                
-            # Create features
-            feature_dict = {
-                'user_id': user,
-                'date': target_day['date'],
-                'measurements': window['hour'].mean(),
-                'mood_mean': window['mood'].mean(),
-                'mood_std': window['mood'].std(),
-                'mood_trend': window['mood'].iloc[-1] - window['mood'].iloc[0],
-                'activity_mean': window['recent_activity'].mean(),
-                'screen_time_mean': window['daily_screen_time'].mean(),
-                'communication_mean': window['communication_time'].mean(),
-                'arousal_mean': window['circumplex_arousal'].mean(),
-                'valence_mean': window['circumplex_valence'].mean(),
-                'emotion_mean': window['emotion_intensity'].mean(),
-                'day_of_week': target_day['date'].dayofweek,
-                'is_weekend': target_day['date'].dayofweek >= 5
-            }
-            
-            features.append(feature_dict)
-            targets.append(target_day['mood'])
-            dates.append(target_day['date'])
-            user_ids.append(user)
+    # Categorical cols handling
+    categorical_cols = ['day_of_week', 'is_weekend']
+    df = pd.get_dummies(df, columns=categorical_cols, drop_first=True, dummy_na=False)
     
-    X = pd.DataFrame(features)
-    y = np.array(targets)
+    # 3 Missing‐mood flag & fill
+    df["mood_missing"] = df["mood"].isna().astype(int)
+    df["mood"] = df["mood"].fillna(df["mood"].mean())
     
-    return X, y, dates, user_ids
+    # 4 Define features & target
+    target       = "target_mood"
+    exclude_cols = ["date","id","split",target]
+    features     = [c for c in df.columns if c not in exclude_cols]
 
-def evaluate_predictions(y_true, y_pred, title="Model Performance"):
-    """Calculate and display multiple performance metrics"""
-    metrics = {
-        'R²': r2_score(y_true, y_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_true, y_pred)),
-        'SMAPE': smape(y_true, y_pred),
-        'WMAPE': wmape(y_true, y_pred)
-    }
-    
-    print(f"\n{title}:")
-    for metric, value in metrics.items():
-        print(f"{metric}: {value:.4f}")
-    
-    return metrics
+    # 5 Build train/val/test sets
+    X_train = df[df["split"]=="train"][["id","date"]+features];  y_train = df[df["split"]=="train"][target]
+    X_val   = df[df["split"]=="val"][["id","date"]+features];    y_val   = df[df["split"]=="val"][target]
+    X_test  = df[df["split"]=="test"][["id","date"]+features];   y_test  = df[df["split"]=="test"][target]
 
-def plot_results(y_true, y_pred, dates, title="Predictions vs Actual"):
-    """Create visualization of predictions"""
-    plt.figure(figsize=(15, 10))
-    
-    # Scatter plot
-    plt.subplot(2, 1, 1)
-    plt.scatter(y_true, y_pred, alpha=0.5)
-    plt.plot([y_true.min(), y_true.max()], [y_true.min(), y_true.max()], 'r--')
-    plt.xlabel("Actual Mood")
-    plt.ylabel("Predicted Mood")
-    plt.title(f"{title} - Scatter Plot")
-    
-    # Time series plot
-    plt.subplot(2, 1, 2)
-    dates = pd.to_datetime(dates)
-    plt.plot(dates, y_true, label='Actual', alpha=0.7)
-    plt.plot(dates, y_pred, label='Predicted', alpha=0.7)
-    plt.xlabel("Date")
-    plt.ylabel("Mood")
-    plt.title(f"{title} - Time Series")
-    plt.legend()
-    
-    plt.tight_layout()
-    plt.savefig(f'data_analysis/plots/modeling/{title.lower().replace(" ", "_")}.png')
-    plt.close()
+    # drop id/date for fitting
+    X_train_f = X_train.drop(["id","date"],axis=1)
+    X_val_f   = X_val.drop(["id","date"],axis=1)
+    X_test_f  = X_test.drop(["id","date"],axis=1)
 
-def main():
-    # Load data
-    print("Loading data...")
-    df = pd.read_csv('data/mood_prediction_simple_features.csv')
-    df['time'] = pd.to_datetime(df['time'])
-    
-    # Print initial stats
-    print(f"\nInitial shape: {df.shape}")
-    print("\nMood recording statistics:")
-    print(df['mood'].describe())
-    print(f"\nNaN in mood: {df['mood'].isna().sum()}")
-    
-    # Prepare train/val/test splits
-    train_end = pd.to_datetime('2014-05-08')
-    val_end = pd.to_datetime('2014-05-23')
-    
-    # Prepare features
-    print("Preparing features...")
-    X, y, dates, user_ids = prepare_rolling_window_data(df)
-    dates = pd.to_datetime(dates)
-    
-    # Split data
-    train_mask = dates <= train_end
-    val_mask = (dates > train_end) & (dates <= val_end)
-    test_mask = dates > val_end
-    
-
-    
-    # Recompute masks after filtering
-    train_mask = dates <= train_end
-    val_mask = (dates > train_end) & (dates <= val_end)
-    test_mask = dates > val_end
-    
-    X_train, y_train = X[train_mask], y[train_mask]
-    X_val, y_val = X[val_mask], y[val_mask]
-    X_test, y_test = X[test_mask], y[test_mask]
-    
-    # Train model
-    print("Training model...")
-    model = xgb.XGBRegressor(
+    # 6 Baseline: untuned XGBoost
+    baseline = xgb.XGBRegressor(
+        random_state=42,
+        eval_metric="rmse",
         n_estimators=100,
-        learning_rate=0.1,
-        max_depth=3,
-        objective='reg:squarederror'
+        max_depth=3
+    )
+    baseline.fit(X_train_f, y_train)
+
+    def report(name, y_true, y_pred):
+        print(f"\n{name}")
+        print(" MAE: ", mean_absolute_error(y_true, y_pred))
+        print(" RMSE:", np.sqrt(mean_squared_error(y_true, y_pred)))
+        print(" R²:  ", r2_score(y_true, y_pred))
+
+    y_val_base  = baseline.predict(X_val_f)
+    y_test_base = baseline.predict(X_test_f)
+    report("Baseline XGB  — Validation", y_val,  y_val_base)
+    report("Baseline XGB  — Test",       y_test, y_test_base)
+
+    # ————————————————————————————————
+    # Tuned XGBoost via time‑series CV
+    tscv = TimeSeriesSplit(n_splits=5)
+    param_dist = {
+        "n_estimators":     [100, 200, 300],
+        "max_depth":        [3, 5, 7],
+        "learning_rate":    [0.01, 0.1, 0.2],
+        "subsample":        [0.6, 0.8, 1.0],
+        "colsample_bytree": [0.6, 0.8, 1.0]
+    }
+    search = RandomizedSearchCV(
+        xgb.XGBRegressor(random_state=42, eval_metric="rmse"),
+        param_distributions=param_dist,
+        n_iter=10,
+        scoring="neg_mean_absolute_error",
+        cv=tscv,
+        random_state=42,
+        n_jobs=-1,
+        verbose=1
+    )
+    search.fit(X_train_f, y_train)
+
+    best_xgb = search.best_estimator_
+    print("\nBest hyperparameters:", search.best_params_)
+
+    # ————————————————————————————————
+    # Evaluate & plot only the tuned model
+    evaluate_model_pipeline(
+        best_xgb,
+        X_train, y_train,
+        X_val,   y_val,
+        X_test,  y_test,
+        model_name="Tuned XGBoost Regression"
     )
     
-    eval_set = [(X_val.drop(['user_id', 'date'], axis=1), y_val)]
-    model.fit(
-        X_train.drop(['user_id', 'date'], axis=1),
-        y_train,
-        eval_set=eval_set,
-        verbose=False
-    )
-    
-    # Make predictions
-    y_train_pred = model.predict(X_train.drop(['user_id', 'date'], axis=1))
-    y_val_pred = model.predict(X_val.drop(['user_id', 'date'], axis=1))
-    y_test_pred = model.predict(X_test.drop(['user_id', 'date'], axis=1))
-    
-    # Evaluate performance
-    train_metrics = evaluate_predictions(y_train, y_train_pred, "Training Performance")
-    val_metrics = evaluate_predictions(y_val, y_val_pred, "Validation Performance")
-    test_metrics = evaluate_predictions(y_test, y_test_pred, "Test Performance")
-    
-    # Create visualizations
-    plot_results(y_train, y_train_pred, dates[train_mask], "Training Results")
-    plot_results(y_val, y_val_pred, dates[val_mask], "Validation Results")
-    plot_results(y_test, y_test_pred, dates[test_mask], "Test Results")
-    
-    # Feature importance
-    feature_importance = pd.DataFrame({
-        'feature': X_train.drop(['user_id', 'date'], axis=1).columns,
-        'importance': model.feature_importances_
-    })
-    feature_importance = feature_importance.sort_values('importance', ascending=False)
-    
-    plt.figure(figsize=(10, 6))
-    sns.barplot(data=feature_importance, x='importance', y='feature')
-    plt.title("Feature Importance")
-    plt.tight_layout()
-    plt.savefig('data_analysis/plots/modeling/feature_importance_simple.png')
-    plt.close()
-    
-    print("\nFeature Importance:")
-    print(feature_importance)
-    
-    # Save model
-    model.save_model('models/xgboost_simple.model')
-    print("\nModel saved to 'models/xgboost_simple.model'")
+    return
+
 
 if __name__ == "__main__":
     main()

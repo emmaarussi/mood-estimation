@@ -513,9 +513,18 @@ def print_analysis_report(analysis, base_filename='report/dataset_analysis'):
             print(f.read())
 
 if __name__ == "__main__":
-    # Example usage
-    input_file = "data/dataset_mood_smartphone.csv"
-    
+    import sys
+    import os
+
+    if len(sys.argv) > 1:
+        input_file = sys.argv[1]
+    else:
+        input_file = "data/dataset_mood_smartphone.csv"
+
+    if not os.path.exists(input_file):
+        logger.error(f"Input file not found: {input_file}")
+        sys.exit(1)
+
     # Clean the dataset and analyze mood patterns
     df_clean, mood_analysis = clean_dataset(input_file)
     

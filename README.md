@@ -59,14 +59,16 @@ mood-estimation/
 
 ## Setup
 
-1. Create a virtual environment:
+1. Create a conda virtual environment:
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Unix/macOS
+conda create -n myenv
+conda activate myenv
 ```
 
 2. Install dependencies:
 ```bash
+conda install pip
+conda install --file requirements.txt
 pip install -r requirements.txt
 ```
 
