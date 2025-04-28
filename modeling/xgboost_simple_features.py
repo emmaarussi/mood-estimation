@@ -39,7 +39,7 @@ def main(input_file=None):
     # 3 Missing‐mood flag & fill
     df["mood_missing"] = df["mood"].isna().astype(int)
     df["mood"] = df["mood"].fillna(df["mood"].mean())
-
+    
     # 4 Define features & target
     target       = "target_mood"
     exclude_cols = ["date","id","split",target]
@@ -101,15 +101,13 @@ def main(input_file=None):
     print("\nBest hyperparameters:", search.best_params_)
 
     # ————————————————————————————————
-    # 8️⃣ Evaluate & plot only the tuned model
-    # (this will use your predict_evaluate_models function,
-    # which does all the scatter/TS plots + feature importances)
+    # Evaluate & plot only the tuned model
     evaluate_model_pipeline(
         best_xgb,
         X_train, y_train,
         X_val,   y_val,
         X_test,  y_test,
-        model_name="Tuned XGBoost Classifier"
+        model_name="Tuned XGBoost Regression"
     )
     
     return

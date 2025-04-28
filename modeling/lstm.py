@@ -54,7 +54,7 @@ feature_cols = base_features + date_dummy_features  # no one-hot user dummies
 # -------------------------------------------------------------
 # 2. Build sequences (no cross-user leakage)
 # -------------------------------------------------------------
-SEQ_LEN = 14
+SEQ_LEN = 4
 X_seq, uid_arr, y, dates = [], [], [], []
 for uid, group in df.groupby("id", sort=False):
     g = group.sort_values("date").reset_index(drop=True)
@@ -301,7 +301,7 @@ for name, X_, uid_, y_true, y_scaled in eval_splits:
         evaluate_predictions(y_true, y_pred, f"Tuned {name} (Original Scale)")
 
 # Optional: Plot results for the test set of the tuned model
-plot_results_scatter(y_te, preds_tuned["Test"], pd.DataFrame({"date": dates[val_end:]}), "Tuned Test Scatter")
-plot_results_ts(y_te, preds_tuned["Test"], pd.DataFrame({"date": dates[val_end:]}), "Tuned Test TS")
+plot_results_scatter(y_te, preds_tuned["Test"], pd.DataFrame({"date": dates[val_end:]}), "LSTM sTuned Test Scatter")
+plot_results_ts(y_te, preds_tuned["Test"], pd.DataFrame({"date": dates[val_end:]}), "LSTM Tuned Test TS")
 
 print("\n=== LSTM Pipeline Finished ===")

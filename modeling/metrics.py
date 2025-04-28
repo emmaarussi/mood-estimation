@@ -88,8 +88,7 @@ def plot_roc_curve(model, X_test, y_test, model_name="Model"):
     """Plot and save ROC curve for a classifier."""
     if hasattr(model, "predict_proba"):
         disp = RocCurveDisplay.from_estimator(
-            model, X_test, y_test, name=f"ROC Curve ({model_name})"
-        )
+            model, X_test, y_test)
         filename = f"data_analysis/plots/modeling/roc_curve_{model_name.lower().replace(' ', '_')}.png"
         disp.figure_.savefig(filename)
         plt.close(disp.figure_)

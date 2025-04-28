@@ -11,6 +11,11 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping as KerasES
 from scikeras.wrappers import KerasClassifier
 from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
+import sys, os
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from metrics import evaluate_model_pipeline
 
 # -------------------------------------------------------------
 # 1. Load and preprocess raw data
@@ -225,3 +230,16 @@ for name, X_, u_, y_true in splits:
 for name, X_, u_, y_true in splits:
     y_pred = (baseline_clf.predict([X_, u_]) > 0.5).astype(int)
     report_clf(f"Best LSTM {name}", y_true, y_pred)
+    
+from sklearn.metrics import RocCurveDisplay
+
+# ROC curve for best LSTM on test set
+y_test_proba = best_model.predict([X_test_s, u_test]).flatten()
+RocCurveDisplay.from_predictions(
+    y_test, y_test_proba, name="Best LSTM"
+)
+import matplotlib.pyplot as plt
+#plt.title("ROC Curve - Best LSTM (Test Set)")
+plt.savefig("data_analysis/plots/modeling/roc_curve_best_lstm.png")
+plt.close()
+print("ROC curve saved to: data_analysis/plots/modeling/roc_curve_best_lstm.png")
